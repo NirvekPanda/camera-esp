@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_FPS,
+  coverCrop,
   DEFAULT_RESOLUTION,
   FPS_OPTIONS,
   RESOLUTIONS,
@@ -31,6 +32,24 @@ describe("resolutions", () => {
 
   it("labels with a multiplication sign", () => {
     expect(resolutionLabel({ width: 1280, height: 720 })).toBe("1280×720");
+  });
+});
+
+describe("coverCrop", () => {
+  it("crops the sides of a wider image", () => {
+    expect(coverCrop(640, 480, 480, 480)).toEqual({ sx: 80, sy: 0, sw: 480, sh: 480 });
+  });
+
+  it("crops top and bottom of a taller image", () => {
+    expect(coverCrop(480, 640, 480, 480)).toEqual({ sx: 0, sy: 80, sw: 480, sh: 480 });
+  });
+
+  it("takes the full image when aspect ratios match, whatever the scale", () => {
+    expect(coverCrop(1280, 720, 640, 360)).toEqual({ sx: 0, sy: 0, sw: 1280, sh: 720 });
+  });
+
+  it("crops HD to the 720×720 square the device can't produce natively", () => {
+    expect(coverCrop(1280, 720, 720, 720)).toEqual({ sx: 280, sy: 0, sw: 720, sh: 720 });
   });
 });
 
