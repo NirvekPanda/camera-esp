@@ -53,7 +53,8 @@ export function DeviceScreen() {
           const clock = new Date();
           ui.setTime(clock.getHours() * 60 + clock.getMinutes());
           ui.setLink(linkRef.current);
-          rgb565ToRgba(ui.frame(Math.round(Math.min(now - last, 100))), image.data);
+          // rAF's frame time can precede `last` on the first frame: clamp to 0..100 ms.
+          rgb565ToRgba(ui.frame(Math.round(Math.min(Math.max(now - last, 0), 100))), image.data);
           ctx.putImageData(image, 0, 0);
           last = now;
           frame = requestAnimationFrame(draw);

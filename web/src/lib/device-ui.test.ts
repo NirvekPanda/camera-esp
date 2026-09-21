@@ -65,6 +65,15 @@ describe("createDeviceUi (real WASM build)", () => {
     expect(ui.screen()).toBe(Screen.Pictures);
   });
 
+  it("ignores negative time steps instead of rewinding animations", async () => {
+    const ui = await createDeviceUi(wasm);
+    ui.press(Button.Right);
+    ui.frame(200); // slide finished
+    expect(ui.animating()).toBe(false);
+    ui.frame(-3); // e.g. rAF's frame time is earlier than when the module loaded
+    expect(ui.animating()).toBe(false);
+  });
+
   it("shows the USB icon only when linked", async () => {
     const ui = await createDeviceUi(wasm);
     const corner = (panel: Uint16Array) => panel.slice(13 * PANEL_SIZE + 200, 13 * PANEL_SIZE + 240); // icon row

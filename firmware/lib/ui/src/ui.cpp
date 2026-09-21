@@ -26,7 +26,8 @@ constexpr uint16_t LOW_BATTERY = rgb565(0xE5, 0x48, 0x4D);
 
 int lerp(int a, int b, int t1024) { return a + (b - a) * t1024 / 1024; }
 int absInt(int v) { return v < 0 ? -v : v; }
-uint32_t advance(uint32_t t, uint32_t ms, uint32_t limit) { return t + ms < limit ? t + ms : limit; }
+// Saturating: t + ms could overflow for huge steps and wind a timer backwards.
+uint32_t advance(uint32_t t, uint32_t ms, uint32_t limit) { return ms < limit - t ? t + ms : limit; }
 
 // Two-digit decimal into out (no printf: keeps the WASM build free of libc formatting).
 char* twoDigits(char* out, int v) {

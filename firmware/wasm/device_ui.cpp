@@ -34,7 +34,7 @@ EMSCRIPTEN_KEEPALIVE void ui_set_link(int link, int batteryPercent) {
 
 // Advances time, renders, flushes over the emulated SPI bus. Returns 240x240 RGB565 as shown.
 EMSCRIPTEN_KEEPALIVE const uint16_t* ui_frame(int elapsedMs) {
-  device.tick(uint32_t(elapsedMs));
+  device.tick(elapsedMs > 0 ? uint32_t(elapsedMs) : 0);  // time never runs backwards
   device.render(fb);
   ui::st7789::flush(panel, fb);
   return panel.render();

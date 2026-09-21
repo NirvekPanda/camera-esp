@@ -324,6 +324,14 @@ TEST(home_row_slides_between_frames) {
   CHECK(!sameRegion(fb, fb2, {0, 40, WIDTH, 150}));  // and from the end
 }
 
+TEST(huge_tick_saturates_instead_of_restarting_animations) {
+  Ui ui;
+  ui.press(Button::Right);
+  ui.tick(FOCUS_MS);
+  ui.tick(0xFFFFFFFDu);  // e.g. a negative step cast to unsigned: must not wrap timers backwards
+  CHECK(!ui.animating());
+}
+
 TEST(center_opens_page_after_zoom) {
   Ui ui;
   ui.press(Button::Center);

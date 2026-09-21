@@ -27,6 +27,7 @@ interface Exports {
   ui_frame(elapsedMs: number): number;
   ui_screen(): number;
   ui_focus(): number;
+  ui_animating(): number;
   ui_golden(): number;
   ui_golden_expected(): number;
 }
@@ -44,6 +45,7 @@ export async function createDeviceUi(wasm: BufferSource) {
     frame: (elapsedMs: number) => new Uint16Array(e.memory.buffer, e.ui_frame(elapsedMs), PANEL_SIZE * PANEL_SIZE),
     screen: () => e.ui_screen(),
     focus: () => e.ui_focus(),
+    animating: () => e.ui_animating() !== 0,
     golden: () => e.ui_golden() >>> 0,
     goldenExpected: () => e.ui_golden_expected() >>> 0,
   };
