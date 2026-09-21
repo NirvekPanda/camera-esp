@@ -244,7 +244,11 @@ firmware/
 
 - **Camera:** OV2640/OV3660 on the Sense board, JPEG quality 12, 2 frame buffers in PSRAM,
   `CAMERA_GRAB_LATEST`. Buffers are allocated for UXGA at init (they can't grow later), then the
-  sensor drops to 240×240. OV3660 modules get `vflip` because they're mounted upside down relative
+  sensor drops to 240×240. FHD has about 8% more pixels than UXGA. That's fine for JPEG: a UXGA
+  JPEG buffer is about 384 KB, and measured FHD frames are about 61 KB. Allocating for FHD instead
+  could fail init on an OV2640.
+- **Out-of-date firmware** answers new commands with `ERROR "Unknown command 0x.."`. The site
+  turns that into "Camera firmware is out of date… Reflash it: make flash". OV3660 modules get `vflip` because they're mounted upside down relative
   to the OV2640.
 - **Loop:** handle any received commands, then send a `FRAME` whenever streaming and the fps
   interval has passed. Streaming starts only when the site sends `STREAM 1`, so an idle port gets no

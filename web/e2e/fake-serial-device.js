@@ -16,6 +16,7 @@
   const camera = {
     silent: false, // true = no firmware: never replies
     dropNextReply: false, // true = lose the next reply, like bytes dropped on the USB link
+    oldFirmware: false, // true = firmware from before VFLIP existed
     streaming: false,
     sensor: "OV3660", // or "OV2640"
     mirrored: false,
@@ -97,6 +98,7 @@
         camera.mirrored = payload[0] === 1;
         return send(T.OK);
       case T.VFLIP:
+        if (camera.oldFirmware) return sendText(T.ERROR, "Unknown command 0x89");
         camera.vflip = payload[0] === 1;
         return send(T.OK);
       case T.FPS:

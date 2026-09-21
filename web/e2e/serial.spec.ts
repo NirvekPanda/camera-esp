@@ -12,6 +12,7 @@ declare global {
     fakeCamera: {
       silent: boolean;
       dropNextReply: boolean;
+      oldFirmware: boolean;
       streaming: boolean;
       sensor: "OV3660" | "OV2640";
       mirrored: boolean;
@@ -146,6 +147,17 @@ test("a lost reply disconnects cleanly instead of mismatching later replies", as
   await page.getByLabel("Frame rate").selectOption("10"); // queued behind it; must not take its reply
   await expect(page.getByRole("status")).toHaveText("disconnected", { timeout: 8000 });
   await expect(errorBanner(page)).toContainText("Camera stopped responding");
+});
+
+test("tells the user to reflash when the board runs older firmware", async ({ page }) => {
+  await page.evaluate(() => {
+    window.fakeCamera.oldFirmware = true;
+  });
+  await page.getByRole("button", { name: "Connect" }).click();
+  await expect(errorBanner(page)).toHaveText(
+    "Camera firmware is out of date (Unknown command 0x89). Reflash it: make flash",
+  );
+  await expect(page.getByRole("status")).toHaveText("disconnected");
 });
 
 test("explains a board without camera firmware", async ({ page }) => {

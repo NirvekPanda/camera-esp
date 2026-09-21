@@ -29,6 +29,14 @@ const decoder = new TextDecoder();
 // The ESP32 has no timezone; sending local wall-clock time lets it name photos in local time.
 const localEpochSeconds = () => Math.floor(Date.now() / 1000) - new Date().getTimezoneOffset() * 60;
 
+// Firmware older than the site answers new commands with "Unknown command 0x..".
+const deviceError = (message: string) =>
+  new Error(
+    message.startsWith("Unknown command")
+      ? `Camera firmware is out of date (${message}). Reflash it: make flash`
+      : message,
+  );
+
 /** The real camera over USB (WebSerial). Chrome/Edge only. */
 export class SerialSource implements CameraSource {
   readonly kind = "serial";
@@ -185,7 +193,7 @@ export class SerialSource implements CameraSource {
     if (type === PacketType.FRAME) return this.showFrame(payload);
     const waiter = this.waiters.shift();
     if (!waiter) return;
-    if (type === PacketType.ERROR) waiter.reject(new Error(decoder.decode(payload)));
+    if (type === PacketType.ERROR) waiter.reject(deviceError(decoder.decode(payload)));
     else if (type !== waiter.expect) waiter.reject(new Error(`Unexpected reply 0x${type.toString(16)}`));
     else waiter.resolve(payload);
   }
