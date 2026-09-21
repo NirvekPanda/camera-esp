@@ -1,3 +1,5 @@
+import type { Resolution } from "./settings";
+
 export interface FileEntry {
   name: string;
   size: number; // bytes
@@ -13,6 +15,8 @@ export interface CameraSource {
   disconnect(): Promise<void>;
   onFrame(listener: FrameListener): () => void;
   setMirror(mirrored: boolean): Promise<void>; // horizontal flip, applied to preview and photos
+  setResolution(resolution: Resolution): Promise<void>; // stream and photo size
+  setFps(fps: number): Promise<void>; // target rate; the transport may deliver less
   capture(): Promise<FileEntry>;
   listFiles(): Promise<FileEntry[]>;
   getFile(name: string): Promise<Blob>;

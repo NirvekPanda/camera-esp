@@ -1,8 +1,7 @@
 import { duplicateName, photoName } from "../filename";
+import { DEFAULT_FPS, DEFAULT_RESOLUTION, type Resolution } from "./settings";
 import type { CameraSource, FileEntry, FrameListener } from "./types";
 
-const SIZE = 240; // matches FRAMESIZE_240X240 on the device
-const FPS = 15;
 const BARS = ["#fff", "#ff0", "#0ff", "#0f0", "#f0f", "#f00", "#00f"];
 
 // Module-level so photos survive reconnects, like a real SD card.
@@ -14,13 +13,14 @@ export type MockInput = "webcam" | "pattern";
 export class MockSource implements CameraSource {
   readonly kind = "mock";
   private readonly input: MockInput;
-  private readonly canvas = new OffscreenCanvas(SIZE, SIZE);
+  private readonly canvas = new OffscreenCanvas(DEFAULT_RESOLUTION.width, DEFAULT_RESOLUTION.height);
   private readonly ctx: OffscreenCanvasRenderingContext2D;
   private readonly listeners = new Set<FrameListener>();
   private video: HTMLVideoElement | null = null;
   private timer: number | null = null;
   private frameCount = 0;
   private mirrored = false;
+  private fps = DEFAULT_FPS;
 
   constructor(input: MockInput) {
     this.input = input;
@@ -32,19 +32,21 @@ export class MockSource implements CameraSource {
   async connect() {
     if (this.input === "webcam") {
       if (!navigator.mediaDevices) throw new Error("Webcam access needs HTTPS or localhost");
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+      // Ask for the most the webcam has; frames are cropped and scaled to the chosen resolution.
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1920 }, height: { ideal: 1080 } },
+      });
       this.video = document.createElement("video");
       this.video.muted = true;
       this.video.playsInline = true;
       this.video.srcObject = stream;
       await this.video.play();
     }
-    this.timer = window.setInterval(() => void this.tick(), 1000 / FPS);
+    this.startTimer();
   }
 
   async disconnect() {
-    if (this.timer !== null) window.clearInterval(this.timer);
-    this.timer = null;
+    this.stopTimer();
     const stream = this.video?.srcObject as MediaStream | null | undefined;
     stream?.getTracks().forEach((track) => track.stop());
     this.video = null;
@@ -59,6 +61,16 @@ export class MockSource implements CameraSource {
 
   async setMirror(mirrored: boolean) {
     this.mirrored = mirrored;
+  }
+
+  async setResolution({ width, height }: Resolution) {
+    this.canvas.width = width;
+    this.canvas.height = height;
+  }
+
+  async setFps(fps: number) {
+    this.fps = fps;
+    if (this.timer !== null) this.startTimer();
   }
 
   async capture(): Promise<FileEntry> {
@@ -81,10 +93,20 @@ export class MockSource implements CameraSource {
     return blob;
   }
 
+  private startTimer() {
+    this.stopTimer();
+    this.timer = window.setInterval(() => void this.tick(), 1000 / this.fps);
+  }
+
+  private stopTimer() {
+    if (this.timer !== null) window.clearInterval(this.timer);
+    this.timer = null;
+  }
+
   private async tick() {
     this.frameCount++;
     // Mirror in the frame itself, like the sensor's hmirror, so photos match the preview.
-    this.ctx.setTransform(this.mirrored ? -1 : 1, 0, 0, 1, this.mirrored ? SIZE : 0, 0);
+    this.ctx.setTransform(this.mirrored ? -1 : 1, 0, 0, 1, this.mirrored ? this.canvas.width : 0, 0);
     if (this.video) this.drawWebcam(this.video);
     else this.drawPattern();
     if (this.listeners.size === 0) return;
@@ -93,30 +115,35 @@ export class MockSource implements CameraSource {
     frame.close();
   }
 
-  // Center-crop to a square, like the device's 240x240 frame.
+  // Center-crop to the output aspect ratio, like the device's cropped frame sizes.
   private drawWebcam(video: HTMLVideoElement) {
-    const { videoWidth: w, videoHeight: h } = video;
-    const side = Math.min(w, h);
-    this.ctx.drawImage(video, (w - side) / 2, (h - side) / 2, side, side, 0, 0, SIZE, SIZE);
+    const { videoWidth: vw, videoHeight: vh } = video;
+    const { width, height } = this.canvas;
+    const scale = Math.min(vw / width, vh / height);
+    const [sw, sh] = [width * scale, height * scale];
+    this.ctx.drawImage(video, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, width, height);
   }
 
   private drawPattern() {
     const { ctx } = this;
-    const barWidth = SIZE / BARS.length;
-    const barHeight = SIZE * 0.7;
+    const { width, height } = this.canvas;
+    const barWidth = width / BARS.length;
+    const barHeight = height * 0.7;
+    const textSize = Math.round(height / 15);
     BARS.forEach((color, i) => {
       ctx.fillStyle = color;
       ctx.fillRect(i * barWidth, 0, barWidth + 1, barHeight);
     });
     ctx.fillStyle = "#111";
-    ctx.fillRect(0, barHeight, SIZE, SIZE - barHeight);
+    ctx.fillRect(0, barHeight, width, height - barHeight);
     // Moving marker makes dropped frames visible.
+    const marker = Math.max(4, width / 60);
     ctx.fillStyle = "#f60";
-    ctx.fillRect((this.frameCount * 4) % SIZE, barHeight, 4, SIZE - barHeight);
+    ctx.fillRect((this.frameCount * marker) % width, barHeight, marker, height - barHeight);
     ctx.fillStyle = "#fff";
-    ctx.font = "16px monospace";
+    ctx.font = `${textSize}px monospace`;
     ctx.textAlign = "center";
-    ctx.fillText(new Date().toLocaleTimeString(), SIZE / 2, barHeight + 30);
-    ctx.fillText(`frame ${this.frameCount}`, SIZE / 2, barHeight + 55);
+    ctx.fillText(new Date().toLocaleTimeString(), width / 2, barHeight + textSize * 1.8);
+    ctx.fillText(`frame ${this.frameCount} · ${width}×${height}`, width / 2, barHeight + textSize * 3.4);
   }
 }

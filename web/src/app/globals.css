@@ -48,6 +48,20 @@ select,
   cursor: pointer;
 }
 
+/* Custom chevron: the native one sits against the right border. Gradients follow the theme color. */
+select {
+  appearance: none;
+  padding-right: 32px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 17px) 50%,
+    calc(100% - 12px) 50%;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+}
+
 button:disabled,
 select:disabled {
   opacity: 0.5;
@@ -123,7 +137,7 @@ main {
 .viewport {
   position: relative;
   width: 100%;
-  aspect-ratio: 1;
+  aspect-ratio: 1; /* overridden inline with the stream resolution */
   background: #000;
   border-radius: var(--radius);
   overflow: hidden;
@@ -178,8 +192,21 @@ main {
   transform: scale(0.9);
 }
 
-.stats {
+.stream-settings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
   margin-top: 8px;
+}
+
+.stream-settings select {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.8rem;
+}
+
+.stats {
+  margin-left: auto;
   font-family: var(--font-geist-mono), monospace;
   font-size: 0.8rem;
   color: var(--muted);

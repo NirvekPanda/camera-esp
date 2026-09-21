@@ -20,7 +20,7 @@ for (const source of ["Mock: test pattern", "Mock: webcam"]) {
   test(`live preview renders frames from ${source}`, async ({ page }) => {
     await connect(page, source);
     await expect.poll(() => canvasBrightness(page)).toBeGreaterThan(0);
-    await expect(page.locator(".stats")).toHaveText(/^[1-9]\d* fps · 240×240$/, { timeout: 5000 });
+    await expect(page.locator(".stats")).toHaveText(/^[1-9]\d* fps actual$/, { timeout: 5000 });
   });
 }
 

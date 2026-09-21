@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { MockSource } from "@/lib/camera/mock-source";
+import { DEFAULT_FPS, DEFAULT_RESOLUTION, type Resolution } from "@/lib/camera/settings";
 import type { CameraSource, FileEntry } from "@/lib/camera/types";
 import { newestFirst } from "@/lib/filename";
 
@@ -19,10 +20,14 @@ interface CameraContextValue {
   error: string | null;
   files: FileEntry[];
   mirrored: boolean;
+  resolution: Resolution;
+  fps: number;
   connect(id: SourceId): Promise<void>;
   disconnect(): void;
   capture(): Promise<void>;
   toggleMirror(): Promise<void>;
+  changeResolution(resolution: Resolution): Promise<void>;
+  changeFps(fps: number): Promise<void>;
   refreshFiles(): Promise<void>;
 }
 
@@ -38,6 +43,8 @@ export function CameraProvider({ children }: { children: ReactNode }) {
   const [mirrored, setMirrored] = useState(false);
   // Latest requested value, so rapid clicks toggle from the pending state, not a stale render.
   const mirrorRef = useRef(false);
+  const [resolution, setResolution] = useState<Resolution>(DEFAULT_RESOLUTION);
+  const [fps, setFps] = useState(DEFAULT_FPS);
 
   // Disconnecting happens here, so replacing the source or unmounting always releases it.
   useEffect(() => {
@@ -52,7 +59,10 @@ export function CameraProvider({ children }: { children: ReactNode }) {
     const next = SOURCE_OPTIONS[id].create();
     try {
       await next.connect();
-      await next.setMirror(mirrorRef.current); // keep the flip setting across reconnects
+      // Apply the chosen settings, so they survive reconnects and can be picked before connecting.
+      await next.setMirror(mirrorRef.current);
+      await next.setResolution(resolution);
+      await next.setFps(fps);
       const nextFiles = await next.listFiles();
       // Only publish the source once fully set up, so a failure can't leave a dead "connected" state.
       setSource(next);
@@ -93,6 +103,24 @@ export function CameraProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  async function changeResolution(next: Resolution) {
+    try {
+      await source?.setResolution(next);
+      setResolution(next);
+    } catch (e) {
+      setError(message(e));
+    }
+  }
+
+  async function changeFps(next: number) {
+    try {
+      await source?.setFps(next);
+      setFps(next);
+    } catch (e) {
+      setError(message(e));
+    }
+  }
+
   async function refreshFiles() {
     if (!source) return;
     try {
@@ -112,10 +140,14 @@ export function CameraProvider({ children }: { children: ReactNode }) {
         error,
         files,
         mirrored,
+        resolution,
+        fps,
         connect,
         disconnect,
         capture,
         toggleMirror,
+        changeResolution,
+        changeFps,
         refreshFiles,
       }}
     >

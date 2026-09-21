@@ -70,8 +70,16 @@ reload, so a bad config never takes down other sites. It re-runs itself if a pul
   sync fall back to `IMG_0001.jpg` counters.
 - **Mirror:** the flip button is a camera setting (`setMirror`), not a CSS transform, so saved
   photos match the preview. The site re-applies it after every reconnect.
-- **Preview resolution:** stream at `FRAMESIZE_240X240` (matches the SPI display), shown at 480×480
-  on the site (2× CSS scale). Stills may later use a higher resolution.
+- **Resolution & frame rate:** picked in the dropdowns under the preview (`lib/camera/settings.ts`).
+  - Resolutions: 240×240 (default, matches the SPI display), 480×480, 720×720, 320×240 (QVGA),
+    640×480 (VGA), 800×600 (SVGA), 1280×720 (HD), 1600×1200 (UXGA, OV2640 max) and 1920×1080 (FHD,
+    OV3660/OV5640 only). The ESP32 camera driver has no 480×480 or 720×720 frame size, so the
+    firmware center-crops them from VGA and HD.
+  - Frame rates: 10, 15 (default), 24, 30 and 60 fps. This is a *target*. The UI shows the actual
+    measured fps next to it, because USB bandwidth (≈0.5–1 MB/s) caps high resolutions well below
+    60 fps.
+  - Photos are taken at the stream resolution. The viewport takes the stream's aspect ratio.
+  - Settings can be chosen before connecting and are re-applied on every connect.
 
 ## 2. Serial protocol (v1)
 
@@ -96,6 +104,8 @@ Binary packets, so JPEGs need no base64:
 | site → ESP | `0x84` | `GET_FILE` | UTF-8 filename |
 | site → ESP | `0x85` | `STREAM` | u8 (1 = on, 0 = off) |
 | site → ESP | `0x86` | `MIRROR` | u8 (1 = flipped); firmware calls the sensor's `set_hmirror` |
+| site → ESP | `0x87` | `RESOLUTION` | u16 LE width, u16 LE height (one of `RESOLUTIONS`) |
+| site → ESP | `0x88` | `FPS` | u8 target frames per second |
 
 - The parser scans for `A5 5A` and resyncs after a corrupted packet.
 - Streaming pauses during `GET_FILE` so file transfers aren't slowed down by frames.
@@ -115,7 +125,8 @@ web/
 ├── .nvmrc / .npmrc             # Node 24.21.0, engine-strict
 ├── e2e/
 │   ├── live-view.spec.ts       # preview renders frames, fps, disconnect, flip
-│   └── photos.spec.ts          # capture, file list, modal navigation, persistence, mirrored photos
+│   ├── photos.spec.ts          # capture, file list, modal navigation, persistence, mirrored photos
+│   └── stream-settings.spec.ts # resolution/fps options, resize, photo size, pre-connect settings
 └── src/
     ├── app/
     │   ├── layout.tsx          # html shell, fonts, metadata
@@ -123,14 +134,16 @@ web/
     │   └── page.tsx            # CameraProvider + page layout
     ├── components/
     │   ├── ConnectBar.tsx      # source picker, connect/disconnect, status dot, errors
-    │   ├── LiveView.tsx        # canvas preview, shutter + flash, flip button, fps stats
+    │   ├── LiveView.tsx        # canvas preview, shutter + flash, flip, resolution/fps dropdowns
     │   ├── FileList.tsx        # saved photos, refresh, click to open
     │   └── ImageModal.tsx      # <dialog> viewer, ← → navigation, download, Esc/backdrop close
     ├── context/
-    │   └── camera-context.tsx  # SOURCE_OPTIONS, active source, status, files, mirror, actions
+    │   └── camera-context.tsx  # SOURCE_OPTIONS, source, status, files, mirror/resolution/fps
     └── lib/
         ├── camera/
         │   ├── types.ts        # CameraSource interface, FileEntry, FrameListener
+        │   ├── settings.ts     # RESOLUTIONS, FPS_OPTIONS, defaults, key/label helpers
+        │   ├── settings.test.ts
         │   └── mock-source.ts  # webcam or test pattern frames, in-memory "SD card"
         ├── filename.ts         # YYYYMMDD-HHMMSS formatting/parsing
         └── filename.test.ts
@@ -161,6 +174,8 @@ interface CameraSource {
   disconnect(): Promise<void>;
   onFrame(listener: (frame: ImageBitmap) => void): () => void; // returns unsubscribe
   setMirror(mirrored: boolean): Promise<void>; // horizontal flip, preview and photos
+  setResolution(resolution: Resolution): Promise<void>; // stream and photo size
+  setFps(fps: number): Promise<void>; // target rate; the transport may deliver less
   capture(): Promise<FileEntry>;
   listFiles(): Promise<FileEntry[]>;
   getFile(name: string): Promise<Blob>;
@@ -181,7 +196,7 @@ and not keep a reference.
 │   │                          [⇋]  │         │  flip (mirror) below shutter
 │   │      live view 480×480        │         │
 │   └───────────────────────────────┘         │
-│   12 fps · 240×240                          │
+│   [240×240 ▾] [15 fps ▾]      15 fps actual │
 ├─────────────────────────────────────────────┤
 │ Photos (3)                       [Refresh]  │  FileList
 │  20260921-142305.jpg   11 KB   2:23 PM      │
@@ -213,18 +228,19 @@ The full rules live in `CLAUDE.md`. In short:
 6. [x] Unit + integration tests, pre-push hook, CI, dev server on port 8888
 7. [x] Horizontal flip button (`setMirror`, mirrored photos)
 8. [x] `start.sh` deploy/stop/restart, `Makefile` (`make flash`, `make web`), Node 24 LTS pin
+9. [x] Resolution and frame-rate dropdowns; custom select chevron
 
 **Phase 1b: USB**
-9. [ ] Firmware: stream `FRAME` packets over USB CDC, `MIRROR` → `set_hmirror`
-10. [ ] `protocol.ts` + `SerialSource`, live view from the real camera
-11. [ ] Firmware: `CAPTURE` to SD, `LIST`, `GET_FILE`, `SET_TIME`
+10. [ ] Firmware: stream `FRAME` packets over USB CDC, `MIRROR` → `set_hmirror`, `RESOLUTION`, `FPS`
+11. [ ] `protocol.ts` + `SerialSource`, live view from the real camera
+12. [ ] Firmware: `CAPTURE` to SD, `LIST`, `GET_FILE`, `SET_TIME`
 
 **Phase 2: device + deploy**
-12. [ ] SPI display shows live view; 5-way switch takes pictures
-13. [ ] On-device file preview menu (240×240)
-14. [ ] Deploy to `camera.nirvek.xyz`: run `./start.sh` on the Proxmox host, add the tunnel
+13. [ ] SPI display shows live view; 5-way switch takes pictures
+14. [ ] On-device file preview menu (240×240)
+15. [ ] Deploy to `camera.nirvek.xyz`: run `./start.sh` on the Proxmox host, add the tunnel
     hostname → `http://<host>:8888` (fix the garbled `cloudflare-domain-setup.md` first)
-15. [ ] Date range filter, camera animations (README step 3)
+16. [ ] Date range filter, camera animations (README step 3)
 
 **Phase 3: features**
 - [ ] WiFi transport (`WifiSource`)
