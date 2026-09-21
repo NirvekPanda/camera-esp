@@ -53,4 +53,5 @@ def export(source, target, env):
     print(f"Exported {IMAGE} ({manifest['version']}) to web/public/firmware/")
 
 
-env.AddPostAction("$BUILD_DIR/${PROGNAME}.bin", export)  # noqa: F821
+# "buildprog" runs on every build, even when nothing relinked, so the export never goes stale.
+env.AddPostAction("buildprog", export)  # noqa: F821
