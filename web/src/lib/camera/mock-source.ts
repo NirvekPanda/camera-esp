@@ -1,5 +1,5 @@
 import { duplicateName, photoName } from "../filename";
-import { DEFAULT_FPS, DEFAULT_RESOLUTION, type Resolution } from "./settings";
+import { DEFAULT_FPS, DEFAULT_RESOLUTION, coverCrop, type Resolution } from "./settings";
 import type { CameraSource, FileEntry, FrameListener } from "./types";
 
 const BARS = ["#fff", "#ff0", "#0ff", "#0f0", "#f0f", "#f00", "#00f"];
@@ -16,6 +16,7 @@ export class MockSource implements CameraSource {
   private readonly canvas = new OffscreenCanvas(DEFAULT_RESOLUTION.width, DEFAULT_RESOLUTION.height);
   private readonly ctx: OffscreenCanvasRenderingContext2D;
   private readonly listeners = new Set<FrameListener>();
+  private readonly closeListeners = new Set<(error: Error) => void>();
   private video: HTMLVideoElement | null = null;
   private timer: number | null = null;
   private frameCount = 0;
@@ -40,6 +41,11 @@ export class MockSource implements CameraSource {
       this.video.muted = true;
       this.video.playsInline = true;
       this.video.srcObject = stream;
+      // e.g. the webcam is unplugged or its permission revoked
+      stream.getVideoTracks()[0]?.addEventListener("ended", () => {
+        void this.disconnect();
+        this.closeListeners.forEach((listener) => listener(new Error("Webcam stopped")));
+      });
       await this.video.play();
     }
     this.draw(); // so a photo taken before the first tick isn't blank
@@ -57,6 +63,13 @@ export class MockSource implements CameraSource {
     this.listeners.add(listener);
     return () => {
       this.listeners.delete(listener);
+    };
+  }
+
+  onClose(listener: (error: Error) => void) {
+    this.closeListeners.add(listener);
+    return () => {
+      this.closeListeners.delete(listener);
     };
   }
 
@@ -124,11 +137,9 @@ export class MockSource implements CameraSource {
 
   // Center-crop to the output aspect ratio, like the device's cropped frame sizes.
   private drawWebcam(video: HTMLVideoElement) {
-    const { videoWidth: vw, videoHeight: vh } = video;
     const { width, height } = this.canvas;
-    const scale = Math.min(vw / width, vh / height);
-    const [sw, sh] = [width * scale, height * scale];
-    this.ctx.drawImage(video, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, width, height);
+    const { sx, sy, sw, sh } = coverCrop(video.videoWidth, video.videoHeight, width, height);
+    this.ctx.drawImage(video, sx, sy, sw, sh, 0, 0, width, height);
   }
 
   private drawPattern() {

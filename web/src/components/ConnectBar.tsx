@@ -5,7 +5,7 @@ import { SOURCE_OPTIONS, useCamera, type SourceId } from "@/context/camera-conte
 
 export function ConnectBar() {
   const { status, error, connect, disconnect } = useCamera();
-  const [choice, setChoice] = useState<SourceId>("webcam");
+  const [choice, setChoice] = useState<SourceId>("usb");
 
   return (
     <header className="bar">
@@ -22,7 +22,6 @@ export function ConnectBar() {
               {option.label}
             </option>
           ))}
-          <option disabled>USB (coming soon)</option>
         </select>
         <button
           onClick={status === "connected" ? disconnect : () => connect(choice)}

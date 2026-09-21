@@ -25,6 +25,14 @@ export const DEFAULT_FPS = 15;
 export const resolutionKey = ({ width, height }: Resolution) => `${width}x${height}`;
 export const resolutionLabel = ({ width, height }: Resolution) => `${width}×${height}`;
 
+/** Source rectangle that center-crops a srcW×srcH image to the dstW×dstH aspect ratio (object-fit: cover). */
+export function coverCrop(srcW: number, srcH: number, dstW: number, dstH: number) {
+  const scale = Math.min(srcW / dstW, srcH / dstH);
+  const sw = dstW * scale;
+  const sh = dstH * scale;
+  return { sx: (srcW - sw) / 2, sy: (srcH - sh) / 2, sw, sh };
+}
+
 export function parseResolution(key: string): Resolution {
   const found = RESOLUTIONS.find((r) => resolutionKey(r) === key);
   if (!found) throw new Error(`Unsupported resolution: ${key}`);

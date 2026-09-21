@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useCamera } from "@/context/camera-context";
 import {
   FPS_OPTIONS,
+  coverCrop,
   RESOLUTIONS,
   parseResolution,
   resolutionKey,
@@ -31,8 +32,11 @@ export function LiveView() {
     if (!source || !ctx) return;
     let frames = 0;
     const unsubscribe = source.onFrame((frame) => {
-      // Scale to the canvas: frames already in flight during a resolution change may be the old size.
-      ctx.drawImage(frame, 0, 0, ctx.canvas.width, ctx.canvas.height);
+      // Center-crop to the canvas: the device sends VGA/HD for the 480×480/720×720 settings, and
+      // frames in flight during a resolution change may still be the old size.
+      const { width, height } = ctx.canvas;
+      const { sx, sy, sw, sh } = coverCrop(frame.width, frame.height, width, height);
+      ctx.drawImage(frame, sx, sy, sw, sh, 0, 0, width, height);
       frames++;
     });
     const timer = setInterval(() => {

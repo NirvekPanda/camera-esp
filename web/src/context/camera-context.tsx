@@ -2,11 +2,13 @@
 
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { MockSource } from "@/lib/camera/mock-source";
+import { SerialSource } from "@/lib/camera/serial-source";
 import { DEFAULT_FPS, DEFAULT_RESOLUTION, type Resolution } from "@/lib/camera/settings";
 import type { CameraSource, FileEntry } from "@/lib/camera/types";
 import { newestFirst } from "@/lib/filename";
 
 export const SOURCE_OPTIONS = {
+  usb: { label: "USB camera", create: () => new SerialSource() },
   webcam: { label: "Mock: webcam", create: () => new MockSource("webcam") },
   pattern: { label: "Mock: test pattern", create: () => new MockSource("pattern") },
 } satisfies Record<string, { label: string; create: () => CameraSource }>;
@@ -60,8 +62,15 @@ export function CameraProvider({ children }: { children: ReactNode }) {
 
   // Disconnecting happens here, so replacing the source or unmounting always releases it.
   useEffect(() => {
+    if (!source) return;
+    const unsubscribe = source.onClose((e) => {
+      setSource(null);
+      setFiles([]);
+      setError(`Camera disconnected: ${e.message}`);
+    });
     return () => {
-      void source?.disconnect();
+      unsubscribe();
+      void source.disconnect();
     };
   }, [source]);
 

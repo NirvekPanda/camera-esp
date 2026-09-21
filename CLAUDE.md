@@ -65,10 +65,25 @@ Before **every** commit to this repo:
 ## Repo root commands
 
 - `make` / `make help`: list targets. Give every new target a `## description` so it shows up there.
-- `make flash [PORT=...]`: build and flash the firmware. `make monitor`: serial monitor.
+- `make flash` / `make upload` `[PORT=...]`: build and flash the firmware over USB. `make hwtest`:
+  protocol-level test of the flashed board (no browser). `make monitor`: serial monitor.
 - `make web` / `make stop` / `make restart`: `./start.sh` deploy, stop and restart of the site on
   nginx at port 8888 (→ `camera.nirvek.xyz` via the Cloudflare tunnel).
 - Run `shellcheck` on `start.sh` and `.githooks/*` after changing them.
+
+## Firmware (`firmware/`)
+
+- PlatformIO + Arduino for the XIAO ESP32-S3 Sense. Keep `CORE_DEBUG_LEVEL=0`: any log text on the
+  USB port corrupts the binary protocol.
+- **The protocol lives in three places, and they must stay in sync:** `web/src/lib/camera/protocol.ts`,
+  `firmware/src/protocol.h` and the test double `web/e2e/fake-serial-device.js`, plus the table in
+  `docs/plan.md`. Every command gets exactly one reply.
+- `web/src/lib/camera/settings.ts` `RESOLUTIONS` must match `FRAME_SIZES` in `main.cpp`.
+- Firmware changes must pass `make flash && make hwtest` on the real board before a PR. Say so in
+  the PR if no board was available.
+- Every build exports `web/public/firmware/` (merged image + manifest). Commit the firmware source
+  first, then `make build`, then commit the exported files, so the manifest version is a real
+  commit and not `-dirty`.
 
 ## Git
 

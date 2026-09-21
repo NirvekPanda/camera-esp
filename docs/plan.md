@@ -5,9 +5,9 @@
 | Element | What it is | Lives in |
 |---|---|---|
 | **Camera device** | Xiao ESP32-S3 + Sense camera (OV2640/OV3660), microSD, SPI 240×240 display, 5-way switch, MPU-6050, battery | hardware |
-| **Firmware** | Arduino/ESP-IDF sketch: captures frames, streams them over USB, saves JPEGs to SD, serves file list/downloads, later drives the SPI display and buttons | `firmware/` (PlatformIO; placeholder sketch until phase 1b) |
+| **Firmware** | Arduino/ESP-IDF sketch: captures frames, streams them over USB, saves JPEGs to SD, serves file list/downloads, later drives the SPI display and buttons | `firmware/` (PlatformIO, Arduino) |
 | **Transport** | How the site talks to the device. **Phase 1: USB serial (WebSerial).** Phase 2: WiFi (feature, added later) | `web/src/lib/camera/` + firmware |
-| **Website** | Static Next.js app: live preview, take-picture button, file browser + image modal, later flashing via esptool-js | `web/` |
+| **Website** | Static Next.js app: live preview, take-picture button, file browser + image modal, firmware image for WebSerial flashing | `web/` |
 | **Deployment** | Static export → nginx on Proxmox host (**port 8888**) → Cloudflare Tunnel → `camera.nirvek.xyz` | `start.sh`, `deploy/nginx.conf`, `Makefile`, `cloudflare-domain-setup.md` |
 | **Pipeline** | Feature branches, unit + integration tests, pre-push hook, CI, code review before PR | `CLAUDE.md`, `.githooks/`, `.github/workflows/` |
 
@@ -35,8 +35,10 @@
 | Command | Does |
 |---|---|
 | `make` / `make help` | list all targets (default goal) |
-| `make flash [PORT=/dev/cu.usbmodemXXXX]` | build + flash firmware (port auto-detected) |
-| `make monitor` / `make build` | serial monitor / build firmware only |
+| `make flash` / `make upload` `[PORT=/dev/cu.usbmodemXXXX]` | build + flash firmware over USB (port auto-detected) |
+| `make build` | build firmware only; also exports `web/public/firmware/` |
+| `make hwtest [PORT=…]` | test the flashed camera over USB (no browser): frames, every resolution, mirror, SD photos |
+| `make monitor` | serial monitor (raw protocol bytes while streaming) |
 | `make web` = `./start.sh` | git pull, stop other copies on 8888, build, publish to nginx, health check |
 | `make stop` = `./start.sh stop` | remove the site from nginx, free port 8888 |
 | `make restart` = `./start.sh restart` | stop + start, without pulling |
@@ -56,7 +58,18 @@ reload, so a bad config never takes down other sites. It re-runs itself if a pul
   opening the site from the ESP itself, or a relay through the Proxmox host.
 - Serial port is shared between streaming and flashing (esptool-js). Only one at a time; the UI will
   need a "disconnect stream → flash → reconnect" flow.
-- Firmware debug logs must go to UART0, **not** the USB CDC port carrying the binary stream.
+- Firmware logging is off (`CORE_DEBUG_LEVEL=0`): log text on the USB port would corrupt the
+  binary stream. Boot-ROM text before the first packet is fine; both parsers skip it.
+
+### USB IDs
+
+| VID:PID | When |
+|---|---|
+| **`303A:1001`** | Espressif built-in USB Serial/JTAG. The camera firmware runs on this (the board's default `ARDUINO_USB_MODE=1`, CDC on boot). Confirmed on the connected board. |
+| `2886:0056` / `2886:8056` | Seeed XIAO ESP32-S3 IDs, seen with TinyUSB firmware or the UF2 bootloader |
+
+The site's port picker (`USB_FILTERS` in `serial-source.ts`) and `make hwtest` accept both
+vendors (`0x303A`, `0x2886`).
 
 ### Conventions
 
@@ -66,18 +79,23 @@ reload, so a bad config never takes down other sites. It re-runs itself if a pul
   plain code-unit order (`newestFirst` in `lib/filename.ts`), not `localeCompare`: locale collation
   puts `_` before `.` and would list the original above its newer duplicates. Firmware must use the
   same naming.
-- **Time:** the ESP has no RTC. On connect the site sends `SET_TIME(epoch)`. Photos taken before a
-  sync fall back to `IMG_0001.jpg` counters.
+- **Time:** the ESP has no RTC. On connect the site sends `SET_TIME` with *local wall-clock* seconds
+  (Unix time + the browser's UTC offset), and the firmware formats it as if it were UTC. That way
+  photo names are in local time without timezone support on the device. Photos taken before a sync
+  fall back to `IMG_0001.jpg` counters.
+- **Photos on the device** are stored in `/photos/` on the SD card.
 - **Mirror:** the flip button is a camera setting (`setMirror`), not a CSS transform, so saved
   photos match the preview. The site re-applies it after every reconnect.
 - **Resolution & frame rate:** picked in the dropdowns under the preview (`lib/camera/settings.ts`).
   - Resolutions: 240×240 (default, matches the SPI display), 480×480, 720×720, 320×240 (QVGA),
     640×480 (VGA), 800×600 (SVGA), 1280×720 (HD), 1600×1200 (UXGA, OV2640 max) and 1920×1080 (FHD,
     OV3660/OV5640 only). The ESP32 camera driver has no 480×480 or 720×720 frame size, so the
-    firmware center-crops them from VGA and HD.
+    firmware streams VGA and HD for those, and the site center-crops the preview (`coverCrop`).
+    Photos are cropped on the device at capture time: decode to RGB888 in PSRAM, crop, re-encode
+    (`cropJpeg`, a few hundred ms). That's too slow per frame, which is why the stream isn't
+    cropped there.
   - Frame rates: 10, 15 (default), 24, 30 and 60 fps. This is a *target*. The UI shows the actual
-    measured fps next to it, because USB bandwidth (≈0.5–1 MB/s) caps high resolutions well below
-    60 fps.
+    measured fps next to it, because USB caps high resolutions well below 60 fps (measured below).
   - Photos are taken at the stream resolution. The viewport takes the stream's aspect ratio.
   - Settings can be chosen before connecting and are re-applied on every connect.
 
@@ -94,9 +112,10 @@ Binary packets, so JPEGs need no base64:
 | Dir | Type | Name | Payload |
 |---|---|---|---|
 | ESP → site | `0x01` | `FRAME` | JPEG bytes |
-| ESP → site | `0x02` | `CAPTURED` | UTF-8 filename |
+| ESP → site | `0x02` | `CAPTURED` | JSON `{name,size}` |
 | ESP → site | `0x03` | `FILE_LIST` | JSON `[{name,size}]` |
 | ESP → site | `0x04` | `FILE_DATA` | JPEG bytes |
+| ESP → site | `0x05` | `OK` | none: reply to `SET_TIME`, `STREAM`, `MIRROR`, `RESOLUTION`, `FPS` |
 | ESP → site | `0x7F` | `ERROR` | UTF-8 message |
 | site → ESP | `0x81` | `SET_TIME` | u32 LE unix seconds |
 | site → ESP | `0x82` | `CAPTURE` | none |
@@ -107,9 +126,40 @@ Binary packets, so JPEGs need no base64:
 | site → ESP | `0x87` | `RESOLUTION` | u16 LE width, u16 LE height (one of `RESOLUTIONS`) |
 | site → ESP | `0x88` | `FPS` | u8 target frames per second |
 
-- The parser scans for `A5 5A` and resyncs after a corrupted packet.
-- Streaming pauses during `GET_FILE` so file transfers aren't slowed down by frames.
-- Budget: USB full speed ≈ 0.5–1 MB/s real throughput. At ~10 KB/frame, target 10–15 fps.
+- **Every command gets exactly one reply, in order:** `OK`, its data packet (`CAPTURED`,
+  `FILE_LIST`, `FILE_DATA`), or `ERROR` with a message for the UI. `FRAME`s are unsolicited and can
+  arrive between replies. So `SerialSource` matches each reply to the oldest pending command.
+- **A missing reply means a broken link.** If a command times out (5 s, 30 s for `GET_FILE`) or a
+  write fails, later replies can no longer be matched safely. So the site disconnects with an
+  error ("Camera stopped responding…", or "…Is the camera firmware flashed?" if the very first
+  command gets no answer).
+- The firmware stops streaming when a USB write comes back short (the host stopped reading). Every
+  connect sends `STREAM 1` again.
+- Both parsers (`protocol.ts`, `firmware/src/protocol.h`) scan for `A5 5A` and resync after noise or
+  a corrupted header (length > 4 MB from the device, > 255 B for commands).
+- Streaming pauses while a `GET_FILE` reply is sent, because the firmware loop sends one packet at a
+  time.
+- The site drops frames while one is still decoding, so a slow decode can't build a backlog.
+
+### Measured on the connected board (`make hwtest`, 30 fps target, JPEG quality 12)
+
+| Resolution | Sensor frame | fps | KB/frame | KB/s |
+|---|---|---|---|---|
+| 240×240 | 240×240 | 30.5 | 4.2 | 127 |
+| 480×480 | 640×480 (site crops) | 28.0 | 13.6 | 381 |
+| 720×720 | 1280×720 (site crops) | 17.5 | 30.9 | 540 |
+| 320×240 | 320×240 | 28.0 | 5.0 | 141 |
+| 640×480 | 640×480 | 28.0 | 13.4 | 375 |
+| 800×600 | 800×600 | 28.0 | 18.8 | 525 |
+| 1280×720 | 1280×720 | 17.5 | 30.3 | 530 |
+| 1600×1200 | 1600×1200 | 14.0 | 57.4 | 804 |
+| 1920×1080 | 1920×1080 | 13.5 | 60.8 | 820 |
+
+The USB Serial/JTAG link tops out at about **820 KB/s**, which is what limits the large sizes.
+FHD streamed, so this module is an OV3660-class sensor (OV2640 tops out at UXGA). On an OV2640,
+`RESOLUTION` 1920×1080 returns an `ERROR` that the site shows, and the dropdown reverts. The
+firmware rejects sizes above UXGA on the OV2640 and checks `status.framesize` after every change,
+because some drivers clamp an oversized request instead of failing.
 
 ## 3. Website scaffolding
 
@@ -122,11 +172,15 @@ web/
 ├── vitest.config.mts           # unit tests: src/**/*.test.ts
 ├── playwright.config.ts        # integration tests: e2e/ against the static build on port 3100
 ├── package.json                # dev (8888), build, test, test:e2e, typecheck, check; engines
+├── public/firmware/            # camera-esp.bin + manifest.json, exported by `make build` (committed)
 ├── .nvmrc / .npmrc             # Node 24.21.0, engine-strict
 ├── e2e/
 │   ├── live-view.spec.ts       # preview renders frames, fps, disconnect, flip
 │   ├── photos.spec.ts          # capture, file list, modal navigation, persistence, mirrored photos
-│   └── stream-settings.spec.ts # resolution/fps options, resize, photo size, pre-connect settings
+│   ├── stream-settings.spec.ts # resolution/fps options, resize, photo size, pre-connect settings
+│   ├── serial.spec.ts          # USB camera end to end against the fake device (below)
+│   ├── fake-serial-device.js   # fake ESP32 on navigator.serial speaking the firmware protocol
+│   └── firmware.spec.ts        # site serves /firmware/manifest.json + a valid flash image
 └── src/
     ├── app/
     │   ├── layout.tsx          # html shell, fonts, metadata
@@ -142,8 +196,11 @@ web/
     └── lib/
         ├── camera/
         │   ├── types.ts        # CameraSource interface, FileEntry, FrameListener
-        │   ├── settings.ts     # RESOLUTIONS, FPS_OPTIONS, defaults, key/label helpers
+        │   ├── settings.ts     # RESOLUTIONS, FPS_OPTIONS, defaults, coverCrop, key/label helpers
         │   ├── settings.test.ts
+        │   ├── protocol.ts     # packet types, encodePacket, incremental PacketParser
+        │   ├── protocol.test.ts
+        │   ├── serial-source.ts# USB camera over WebSerial: USB_FILTERS, request/reply queue, frames
         │   └── mock-source.ts  # webcam or test pattern frames, in-memory "SD card"
         ├── filename.ts         # YYYYMMDD-HHMMSS formatting/parsing
         └── filename.test.ts
@@ -152,16 +209,38 @@ web/
 Outside `web/`:
 
 ```
-Makefile                        # help (default), flash, monitor, build, web, stop, restart, check
+Makefile                        # help (default), build, flash/upload, hwtest, monitor, web, stop, restart, check
 start.sh                        # deploy / stop / restart the site on nginx
 deploy/nginx.conf               # server block template (__PORT__, __ROOT__)
 firmware/
-├── platformio.ini              # seeed_xiao_esp32s3, espressif32@7.1.3
-└── src/main.cpp                # placeholder: blink + serial hello
+├── platformio.ini              # seeed_xiao_esp32s3, espressif32@7.1.3, logs off, export script
+├── src/
+│   ├── main.cpp                # camera init, command handling, streaming loop, SD photos
+│   ├── protocol.h              # packet types, send helpers, command Parser (mirrors protocol.ts)
+│   └── camera_pins.h           # XIAO ESP32-S3 Sense camera + SD pins
+├── scripts/export_web.py       # post-build: merged image + manifest → web/public/firmware/
+└── tools/hwtest.py             # `make hwtest`: protocol-level hardware test (pyserial)
 ```
 
-Phase 1b adds `lib/camera/protocol.ts` (packet encode/decode and streaming parser) and
-`lib/camera/serial-source.ts` (WebSerial `CameraSource`), plus a USB entry in `SOURCE_OPTIONS`.
+### Firmware
+
+- **Camera:** OV2640/OV3660 on the Sense board, JPEG quality 12, 2 frame buffers in PSRAM,
+  `CAMERA_GRAB_LATEST`. Buffers are allocated for UXGA at init (they can't grow later), then the
+  sensor drops to 240×240. OV3660 modules get `vflip` because they're mounted upside down relative
+  to the OV2640.
+- **Loop:** handle any received commands, then send a `FRAME` whenever streaming and the fps
+  interval has passed. Streaming starts only when the site sends `STREAM 1`, so an idle port gets no
+  binary data.
+- **SD card:** SPI, CS = GPIO21 (shared with the user LED, so the LED is unused). With no card,
+  `CAPTURE` / `LIST` / `GET_FILE` reply `ERROR "No SD card"`, and streaming still works. A failed
+  write deletes the partial file.
+- **Flashing:** `make flash` (or `make upload`) from the CLI. Every build also exports
+  `web/public/firmware/camera-esp.bin`. That's a merged image (bootloader, partitions, boot_app0,
+  app) to write at `0x0`, the same parts and offsets `pio run -t upload` uses. `manifest.json` next
+  to it records `version`: the last commit touching the image's sources (`firmware/src/`,
+  `platformio.ini`), plus `-dirty` for uncommitted edits to them. The site serves both files, ready for the WebSerial flashing UI (esptool-js, next
+  step). **Workflow:** commit firmware source changes, run `make build`, then commit the exported
+  files, so the served image matches a real commit.
 
 ### The `CameraSource` interface
 
@@ -173,6 +252,7 @@ interface CameraSource {
   connect(): Promise<void>;
   disconnect(): Promise<void>;
   onFrame(listener: (frame: ImageBitmap) => void): () => void; // returns unsubscribe
+  onClose(listener: (error: Error) => void): () => void; // camera went away on its own (unplugged)
   setMirror(mirrored: boolean): Promise<void>; // horizontal flip, preview and photos
   setResolution(resolution: Resolution): Promise<void>; // stream and photo size
   setFps(fps: number): Promise<void>; // target rate; the transport may deliver less
@@ -189,7 +269,7 @@ and not keep a reference.
 
 ```
 ┌─────────────────────────────────────────────┐
-│ ESP Camera   [Mock ▾] [Connect]  ● connected   │  ConnectBar
+│ ESP Camera  [USB camera ▾] [Connect] ● connected │  ConnectBar
 ├─────────────────────────────────────────────┤
 │   ┌───────────────────────────────┐         │
 │   │                          [◉]  │         │  LiveView (shutter overlay)
@@ -210,7 +290,9 @@ The full rules live in `CLAUDE.md`. In short:
 
 1. One branch per feature (`feature/<name>`, `fix/<name>`). No commits or pushes to `main`.
 2. New code ships with **unit tests** (Vitest, `*.test.ts`) and **integration tests** (Playwright,
-   `web/e2e/`).
+   `web/e2e/`). USB behavior is tested against `fake-serial-device.js`. Keep it in step with the
+   firmware whenever the protocol changes. Firmware changes are also checked on the real board with
+   `make flash && make hwtest`.
 3. `npm run check` = lint → typecheck → unit → build → integration. It runs locally in the
    **pre-push hook** (`.githooks/pre-push`, which also blocks pushes to `main`) and in **CI**
    (`.github/workflows/web.yml`) on every PR.
@@ -231,18 +313,20 @@ The full rules live in `CLAUDE.md`. In short:
 9. [x] Resolution and frame-rate dropdowns; custom select chevron
 
 **Phase 1b: USB**
-10. [ ] Firmware: stream `FRAME` packets over USB CDC, `MIRROR` → `set_hmirror`, `RESOLUTION`, `FPS`
-11. [ ] `protocol.ts` + `SerialSource`, live view from the real camera
-12. [ ] Firmware: `CAPTURE` to SD, `LIST`, `GET_FILE`, `SET_TIME`
+10. [x] Firmware: stream `FRAME` packets over USB CDC, `MIRROR` → `set_hmirror`, `RESOLUTION`, `FPS`
+11. [x] `protocol.ts` + `SerialSource`, live view from the real camera (stream verified with `make hwtest`)
+12. [x] Firmware: `CAPTURE` to SD, `LIST`, `GET_FILE`, `SET_TIME` (SD path untested on hardware: no card inserted yet)
+13. [x] `make flash` / `make upload`, `make hwtest`, firmware image + manifest exported to the site
+14. [ ] Flash firmware from the site over WebSerial (esptool-js, using `/firmware/manifest.json`)
+15. [x] Crop 480×480 / 720×720 photos on the device (untested on hardware: needs an SD card)
 
 **Phase 2: device + deploy**
-13. [ ] SPI display shows live view; 5-way switch takes pictures
-14. [ ] On-device file preview menu (240×240)
-15. [ ] Deploy to `camera.nirvek.xyz`: run `./start.sh` on the Proxmox host, add the tunnel
+16. [ ] SPI display shows live view; 5-way switch takes pictures
+17. [ ] On-device file preview menu (240×240)
+18. [ ] Deploy to `camera.nirvek.xyz`: run `./start.sh` on the Proxmox host, add the tunnel
     hostname → `http://<host>:8888` (fix the garbled `cloudflare-domain-setup.md` first)
-16. [ ] Date range filter, camera animations (README step 3)
+19. [ ] Date range filter, camera animations (README step 3)
 
 **Phase 3: features**
 - [ ] WiFi transport (`WifiSource`)
-- [ ] Flash firmware from the site (esptool-js)
 - [ ] Orientation via MPU-6050, OTA image upload/backup
