@@ -15,6 +15,7 @@
 
   const camera = {
     silent: false, // true = no firmware: never replies
+    dropNextReply: false, // true = lose the next reply, like bytes dropped on the USB link
     streaming: false,
     mirrored: false,
     size: [240, 240],
@@ -77,6 +78,10 @@
   async function handle(type, payload) {
     camera.commands.push(type);
     if (camera.silent) return;
+    if (camera.dropNextReply) {
+      camera.dropNextReply = false;
+      return;
+    }
     const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
     switch (type) {
       case T.SET_TIME:

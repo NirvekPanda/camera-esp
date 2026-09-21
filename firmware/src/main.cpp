@@ -4,6 +4,7 @@
 #include <SD.h>
 #include <SPI.h>
 #include <esp_camera.h>
+#include <img_converters.h>
 #include <sys/time.h>
 
 #include "camera_pins.h"
@@ -29,6 +30,7 @@ const FrameSize FRAME_SIZES[] = {
 };
 
 sensor_t* sensor = nullptr;  // null if the camera failed to start
+const FrameSize* requested = &FRAME_SIZES[0];  // may be smaller than the sensor frame (square crops)
 bool sdReady = false;
 bool timeSynced = false;
 bool streaming = false;
@@ -72,7 +74,27 @@ bool initCamera() {
   return true;
 }
 
+void ok() { send(protocol::OK); }
 void sendError(const String& message) { send(ERROR, message); }
+
+// Center-crop a JPEG frame to width x height (decode, crop, re-encode). Used for 480x480 and
+// 720x720 photos, which the sensor can't produce natively. Takes a few hundred ms: stills only.
+bool cropJpeg(const camera_fb_t* fb, uint16_t width, uint16_t height, uint8_t** out, size_t* outLength) {
+  const size_t srcWidth = fb->width, srcHeight = fb->height;
+  uint8_t* rgb = static_cast<uint8_t*>(ps_malloc(srcWidth * srcHeight * 3));
+  if (!rgb) return false;
+  bool ok = fmt2rgb888(fb->buf, fb->len, PIXFORMAT_JPEG, rgb);
+  if (ok) {
+    const size_t x0 = (srcWidth - width) / 2, y0 = (srcHeight - height) / 2;
+    // In place: each row moves to an earlier position; memmove handles the overlap.
+    for (size_t y = 0; y < height; y++) {
+      memmove(rgb + y * width * 3, rgb + ((y + y0) * srcWidth + x0) * 3, width * 3);
+    }
+    ok = fmt2jpg(rgb, width * height * 3, width, height, PIXFORMAT_RGB888, 90, out, outLength);
+  }
+  free(rgb);
+  return ok;
+}
 
 String photoPath(const String& name) { return String(PHOTO_DIR) + "/" + name; }
 
@@ -102,10 +124,15 @@ String nextPhotoName() {
 void setResolution(uint16_t width, uint16_t height) {
   for (const FrameSize& f : FRAME_SIZES) {
     if (f.width != width || f.height != height) continue;
-    if (sensor->set_framesize(sensor, f.size) != 0) {
+    // Some drivers clamp an oversized request instead of failing (OV2640 tops out at UXGA), so
+    // also check the size the sensor actually took.
+    bool tooBig = sensor->id.PID == OV2640_PID && f.size > FRAMESIZE_UXGA;
+    if (tooBig || sensor->set_framesize(sensor, f.size) != 0 || sensor->status.framesize != f.size) {
+      sensor->set_framesize(sensor, requested->size);  // stay on the previous size
       return sendError(String(width) + "×" + height + " isn't supported by this camera sensor");
     }
-    return send(protocol::OK);
+    requested = &f;
+    return ok();
   }
   sendError(String("Unknown resolution ") + width + "×" + height);
 }
@@ -114,13 +141,27 @@ void capture() {
   if (!sdReady) return sendError("No SD card");
   camera_fb_t* fb = esp_camera_fb_get();
   if (!fb) return sendError("Camera capture failed");
+  const uint8_t* data = fb->buf;
+  size_t size = fb->len;
+  uint8_t* cropped = nullptr;
+  // Square sizes arrive as VGA/HD frames; crop the photo to what was asked for.
+  bool crop = fb->width > requested->width && fb->height >= requested->height;
+  if (crop && !cropJpeg(fb, requested->width, requested->height, &cropped, &size)) {
+    esp_camera_fb_return(fb);
+    return sendError("Couldn't crop the photo (out of memory?)");
+  }
+  if (cropped) data = cropped;
+
   String name = nextPhotoName();
   File file = SD.open(photoPath(name), FILE_WRITE);
-  size_t size = fb->len;
-  bool written = file && file.write(fb->buf, size) == size;
+  bool written = file && file.write(data, size) == size;
   file.close();
+  free(cropped);
   esp_camera_fb_return(fb);
-  if (!written) return sendError("Couldn't write to the SD card");
+  if (!written) {
+    SD.remove(photoPath(name));  // don't leave a truncated photo behind
+    return sendError("Couldn't write to the SD card");
+  }
   send(CAPTURED, "{\"name\":\"" + name + "\",\"size\":" + size + "}");
 }
 
@@ -169,7 +210,7 @@ void handle(uint8_t type, const uint8_t* payload, uint32_t length) {
       timeval tv = {time_t(readU32(payload)), 0};
       settimeofday(&tv, nullptr);
       timeSynced = true;
-      return send(protocol::OK);
+      return ok();
     }
     case LIST:
       return listPhotos();
@@ -182,18 +223,18 @@ void handle(uint8_t type, const uint8_t* payload, uint32_t length) {
   switch (type) {
     case STREAM:
       streaming = length == 1 && payload[0];
-      return send(protocol::OK);
+      return ok();
     case MIRROR:
       if (length != 1) return sendError("MIRROR needs 1 byte");
       sensor->set_hmirror(sensor, payload[0] ? 1 : 0);
-      return send(protocol::OK);
+      return ok();
     case RESOLUTION:
       if (length != 4) return sendError("RESOLUTION needs 4 bytes");
       return setResolution(readU16(payload), readU16(payload + 2));
     case FPS:
       if (length != 1 || payload[0] == 0) return sendError("FPS needs 1 non-zero byte");
       frameIntervalMs = 1000 / payload[0];
-      return send(protocol::OK);
+      return ok();
     case CAPTURE:
       return capture();
     default:
@@ -217,7 +258,8 @@ void loop() {
   if (streaming && millis() - lastFrameMs >= frameIntervalMs) {
     lastFrameMs = millis();
     if (camera_fb_t* fb = esp_camera_fb_get()) {
-      send(FRAME, fb->buf, fb->len);
+      // A short write means the host stopped reading; stop until it asks again (STREAM 1).
+      if (!send(FRAME, fb->buf, fb->len)) streaming = false;
       esp_camera_fb_return(fb);
     }
   }

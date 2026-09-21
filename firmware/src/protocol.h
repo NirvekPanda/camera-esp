@@ -29,20 +29,20 @@ enum Type : uint8_t {
   FPS = 0x88,
 };
 
-inline void writeHeader(uint8_t type, uint32_t length) {
+// Writes return false when USB dropped bytes (the host stopped reading for longer than the TX timeout).
+inline bool writeHeader(uint8_t type, uint32_t length) {
   const uint8_t header[HEADER_SIZE] = {
       MAGIC[0], MAGIC[1], type,
       uint8_t(length), uint8_t(length >> 8), uint8_t(length >> 16), uint8_t(length >> 24)};
-  Serial.write(header, sizeof header);
+  return Serial.write(header, sizeof header) == sizeof header;
 }
 
-inline void send(uint8_t type, const uint8_t* data = nullptr, size_t length = 0) {
-  writeHeader(type, length);
-  if (length) Serial.write(data, length);
+inline bool send(uint8_t type, const uint8_t* data = nullptr, size_t length = 0) {
+  return writeHeader(type, length) && (length == 0 || Serial.write(data, length) == length);
 }
 
-inline void send(uint8_t type, const String& text) {
-  send(type, reinterpret_cast<const uint8_t*>(text.c_str()), text.length());
+inline bool send(uint8_t type, const String& text) {
+  return send(type, reinterpret_cast<const uint8_t*>(text.c_str()), text.length());
 }
 
 inline uint16_t readU16(const uint8_t* p) { return p[0] | p[1] << 8; }

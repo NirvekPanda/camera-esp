@@ -9,11 +9,11 @@ export const USB_FILTERS: SerialPortFilter[] = [{ usbVendorId: 0x303a }, { usbVe
 
 const REQUEST_TIMEOUT_MS = 5000;
 const FILE_TIMEOUT_MS = 30000;
-const NO_REPLY = "Camera didn't respond. Is the camera firmware flashed? (make flash)";
+const NO_REPLY = "Camera stopped responding. Reconnect it (unplug and replug if that fails).";
+const NO_FIRMWARE = "Camera didn't respond. Is the camera firmware flashed? (make flash)";
 
 interface Waiter {
   expect: number;
-  abandoned: boolean;
   resolve(payload: Uint8Array<ArrayBuffer>): void;
   reject(error: Error): void;
 }
@@ -42,6 +42,8 @@ export class SerialSource implements CameraSource {
   private readonly waiters: Waiter[] = [];
   private decoding = false;
   private closing = false;
+  private alive = false; // the read loop is running
+  private failure: Error | null = null;
 
   async connect() {
     if (!("serial" in navigator)) throw new Error("This browser has no WebSerial. Use Chrome or Edge.");
@@ -52,8 +54,14 @@ export class SerialSource implements CameraSource {
     this.writer = port.writable.getWriter();
     const reader = port.readable.getReader();
     this.reader = reader;
+    this.alive = true;
     this.readLoop = this.read(reader);
-    await this.request(PacketType.SET_TIME, u32(localEpochSeconds()));
+    try {
+      await this.request(PacketType.SET_TIME, u32(localEpochSeconds()));
+    } catch (e) {
+      // No reply to the very first command usually means other firmware is on the board.
+      throw this.failure?.message === NO_REPLY ? new Error(NO_FIRMWARE) : e;
+    }
     await this.request(PacketType.STREAM, u8(1));
   }
 
@@ -120,15 +128,13 @@ export class SerialSource implements CameraSource {
     { expect = PacketType.OK, timeoutMs = REQUEST_TIMEOUT_MS }: RequestOptions = {},
   ): Promise<Uint8Array<ArrayBuffer>> {
     const writer = this.writer;
-    if (!writer) return Promise.reject(new Error("Camera is not connected"));
+    if (!writer || !this.alive) return Promise.reject(this.failure ?? new Error("Camera is not connected"));
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        waiter.abandoned = true; // stays queued so its late reply is still matched and dropped
-        reject(new Error(NO_REPLY));
-      }, timeoutMs);
+      // Replies are matched by order, so after a missing one nothing later can be trusted:
+      // treat a timeout (or failed write) as a broken link rather than risk shifted replies.
+      const timer = setTimeout(() => this.fail(new Error(NO_REPLY)), timeoutMs);
       const waiter: Waiter = {
         expect,
-        abandoned: false,
         resolve: (reply) => {
           clearTimeout(timer);
           resolve(reply);
@@ -140,11 +146,15 @@ export class SerialSource implements CameraSource {
       };
       this.waiters.push(waiter);
       writer.write(encodePacket(type, payload)).catch((e: unknown) => {
-        // Never reached the device, so no reply will come: unqueue it or replies would shift.
-        this.waiters.splice(this.waiters.indexOf(waiter), 1);
-        waiter.reject(e instanceof Error ? e : new Error(String(e)));
+        this.fail(e instanceof Error ? e : new Error(String(e)));
       });
     });
+  }
+
+  // Ends the read loop, which rejects every pending command and reports the close.
+  private fail(error: Error) {
+    this.failure ??= error;
+    void this.reader?.cancel().catch(() => {});
   }
 
   private async read(reader: ReadableStreamDefaultReader<Uint8Array>) {
@@ -161,6 +171,8 @@ export class SerialSource implements CameraSource {
     } finally {
       reader.releaseLock();
     }
+    this.alive = false;
+    reason = this.failure ?? reason;
     this.waiters.splice(0).forEach((waiter) => waiter.reject(reason));
     if (!this.closing) this.closeListeners.forEach((listener) => listener(reason));
   }
@@ -168,7 +180,7 @@ export class SerialSource implements CameraSource {
   private handle({ type, payload }: Packet) {
     if (type === PacketType.FRAME) return this.showFrame(payload);
     const waiter = this.waiters.shift();
-    if (!waiter || waiter.abandoned) return;
+    if (!waiter) return;
     if (type === PacketType.ERROR) waiter.reject(new Error(decoder.decode(payload)));
     else if (type !== waiter.expect) waiter.reject(new Error(`Unexpected reply 0x${type.toString(16)}`));
     else waiter.resolve(payload);

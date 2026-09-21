@@ -91,8 +91,9 @@ vendors (`0x303A`, `0x2886`).
     640×480 (VGA), 800×600 (SVGA), 1280×720 (HD), 1600×1200 (UXGA, OV2640 max) and 1920×1080 (FHD,
     OV3660/OV5640 only). The ESP32 camera driver has no 480×480 or 720×720 frame size, so the
     firmware streams VGA and HD for those, and the site center-crops the preview (`coverCrop`).
-    *Known limitation:* photos saved at those two settings are the full VGA/HD frame. Cropping on
-    the device (sensor windowing via `set_res_raw`, or decode → crop → re-encode) is a follow-up.
+    Photos are cropped on the device at capture time: decode to RGB888 in PSRAM, crop, re-encode
+    (`cropJpeg`, a few hundred ms). That's too slow per frame, which is why the stream isn't
+    cropped there.
   - Frame rates: 10, 15 (default), 24, 30 and 60 fps. This is a *target*. The UI shows the actual
     measured fps next to it, because USB caps high resolutions well below 60 fps (measured below).
   - Photos are taken at the stream resolution. The viewport takes the stream's aspect ratio.
@@ -127,9 +128,13 @@ Binary packets, so JPEGs need no base64:
 
 - **Every command gets exactly one reply, in order:** `OK`, its data packet (`CAPTURED`,
   `FILE_LIST`, `FILE_DATA`), or `ERROR` with a message for the UI. `FRAME`s are unsolicited and can
-  arrive between replies. So `SerialSource` matches each reply to the oldest pending command. A
-  command that times out (5 s, 30 s for `GET_FILE`) stays queued, so its late reply is consumed and
-  doesn't shift the ones after it.
+  arrive between replies. So `SerialSource` matches each reply to the oldest pending command.
+- **A missing reply means a broken link.** If a command times out (5 s, 30 s for `GET_FILE`) or a
+  write fails, later replies can no longer be matched safely. So the site disconnects with an
+  error ("Camera stopped responding…", or "…Is the camera firmware flashed?" if the very first
+  command gets no answer).
+- The firmware stops streaming when a USB write comes back short (the host stopped reading). Every
+  connect sends `STREAM 1` again.
 - Both parsers (`protocol.ts`, `firmware/src/protocol.h`) scan for `A5 5A` and resync after noise or
   a corrupted header (length > 4 MB from the device, > 255 B for commands).
 - Streaming pauses while a `GET_FILE` reply is sent, because the firmware loop sends one packet at a
@@ -152,7 +157,9 @@ Binary packets, so JPEGs need no base64:
 
 The USB Serial/JTAG link tops out at about **820 KB/s**, which is what limits the large sizes.
 FHD streamed, so this module is an OV3660-class sensor (OV2640 tops out at UXGA). On an OV2640,
-`RESOLUTION` 1920×1080 returns an `ERROR` that the site shows, and the dropdown reverts.
+`RESOLUTION` 1920×1080 returns an `ERROR` that the site shows, and the dropdown reverts. The
+firmware rejects sizes above UXGA on the OV2640 and checks `status.framesize` after every change,
+because some drivers clamp an oversized request instead of failing.
 
 ## 3. Website scaffolding
 
@@ -225,7 +232,8 @@ firmware/
   interval has passed. Streaming starts only when the site sends `STREAM 1`, so an idle port gets no
   binary data.
 - **SD card:** SPI, CS = GPIO21 (shared with the user LED, so the LED is unused). With no card,
-  `CAPTURE` / `LIST` / `GET_FILE` reply `ERROR "No SD card"`, and streaming still works.
+  `CAPTURE` / `LIST` / `GET_FILE` reply `ERROR "No SD card"`, and streaming still works. A failed
+  write deletes the partial file.
 - **Flashing:** `make flash` (or `make upload`) from the CLI. Every build also exports
   `web/public/firmware/camera-esp.bin`. That's a merged image (bootloader, partitions, boot_app0,
   app) to write at `0x0`, the same parts and offsets `pio run -t upload` uses. `manifest.json` next
@@ -310,7 +318,7 @@ The full rules live in `CLAUDE.md`. In short:
 12. [x] Firmware: `CAPTURE` to SD, `LIST`, `GET_FILE`, `SET_TIME` (SD path untested on hardware: no card inserted yet)
 13. [x] `make flash` / `make upload`, `make hwtest`, firmware image + manifest exported to the site
 14. [ ] Flash firmware from the site over WebSerial (esptool-js, using `/firmware/manifest.json`)
-15. [ ] Crop 480×480 / 720×720 photos on the device
+15. [x] Crop 480×480 / 720×720 photos on the device (untested on hardware: needs an SD card)
 
 **Phase 2: device + deploy**
 16. [ ] SPI display shows live view; 5-way switch takes pictures

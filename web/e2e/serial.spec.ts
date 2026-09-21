@@ -11,6 +11,7 @@ declare global {
   interface Window {
     fakeCamera: {
       silent: boolean;
+      dropNextReply: boolean;
       streaming: boolean;
       mirrored: boolean;
       size: [number, number];
@@ -109,6 +110,17 @@ test("disconnect stops the stream on the device", async ({ page }) => {
   await page.getByRole("button", { name: "Disconnect" }).click();
   await expect(page.getByRole("status")).toHaveText("disconnected");
   await expect.poll(() => page.evaluate(() => window.fakeCamera.streaming)).toBe(false);
+});
+
+test("a lost reply disconnects cleanly instead of mismatching later replies", async ({ page }) => {
+  await connectUsb(page);
+  await page.evaluate(() => {
+    window.fakeCamera.dropNextReply = true;
+  });
+  await page.getByLabel("Frame rate").selectOption("30"); // this command's reply is lost
+  await page.getByLabel("Frame rate").selectOption("10"); // queued behind it; must not take its reply
+  await expect(page.getByRole("status")).toHaveText("disconnected", { timeout: 8000 });
+  await expect(errorBanner(page)).toContainText("Camera stopped responding");
 });
 
 test("explains a board without camera firmware", async ({ page }) => {
