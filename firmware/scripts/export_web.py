@@ -53,5 +53,5 @@ def export(source, target, env):
     print(f"Exported {IMAGE} ({manifest['version']}) to web/public/firmware/")
 
 
-# "buildprog" runs on every build, even when nothing relinked, so the export never goes stale.
-env.AddPostAction("buildprog", export)  # noqa: F821
+# The size check runs on every build, even when nothing relinked, so the export never goes stale.
+env.AddPostAction("checkprogsize", export)  # noqa: F821
