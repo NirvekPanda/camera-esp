@@ -12,8 +12,11 @@ declare global {
     fakeCamera: {
       silent: boolean;
       dropNextReply: boolean;
+      oldFirmware: boolean;
       streaming: boolean;
+      sensor: "OV3660" | "OV2640";
       mirrored: boolean;
+      vflip: boolean;
       size: [number, number];
       fps: number;
       clock: number | null;
@@ -66,6 +69,25 @@ test("applies resolution, fps and mirror on the device", async ({ page }) => {
 
   await page.getByRole("button", { name: "Flip horizontally" }).click();
   await expect.poll(() => page.evaluate(() => window.fakeCamera.mirrored)).toBe(true);
+  await page.getByRole("button", { name: "Flip vertically" }).click();
+  await expect.poll(() => page.evaluate(() => window.fakeCamera.vflip)).toBe(true);
+});
+
+test("streams the 1920×1080 default on an OV3660", async ({ page }) => {
+  await connectUsb(page);
+  expect(await page.evaluate(() => window.fakeCamera.size)).toEqual([1920, 1080]);
+  await expect(page.getByLabel("Resolution")).toHaveValue("1920x1080");
+  await expect(errorBanner(page)).toHaveCount(0);
+});
+
+test("an OV2640 connects at 240×240 when it can't do the 1920×1080 default", async ({ page }) => {
+  await page.evaluate(() => {
+    window.fakeCamera.sensor = "OV2640";
+  });
+  await connectUsb(page);
+  expect(await page.evaluate(() => window.fakeCamera.size)).toEqual([240, 240]);
+  await expect(page.getByLabel("Resolution")).toHaveValue("240x240");
+  await expect(errorBanner(page)).toHaveText("1920×1080 isn't supported by this camera sensor");
 });
 
 test("center-crops the VGA frames the device sends for 480×480", async ({ page }) => {
@@ -79,10 +101,14 @@ test("center-crops the VGA frames the device sends for 480×480", async ({ page 
 });
 
 test("shows the sensor's error for an unsupported resolution and keeps the old one", async ({ page }) => {
+  await page.evaluate(() => {
+    window.fakeCamera.sensor = "OV2640";
+  });
+  await page.getByLabel("Resolution").selectOption("640x480");
   await connectUsb(page);
   await page.getByLabel("Resolution").selectOption("1920x1080");
   await expect(errorBanner(page)).toHaveText("1920×1080 isn't supported by this camera sensor");
-  await expect(page.getByLabel("Resolution")).toHaveValue("240x240");
+  await expect(page.getByLabel("Resolution")).toHaveValue("640x480");
 });
 
 test("captures to the device, lists and opens the photo", async ({ page }) => {
@@ -95,7 +121,7 @@ test("captures to the device, lists and opens the photo", async ({ page }) => {
   await page.getByRole("button", { name: name! }).click();
   const img = page.getByRole("dialog").getByRole("img");
   await expect(img).toHaveJSProperty("complete", true);
-  expect(await img.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBe(240);
+  expect(await img.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBe(1920);
 });
 
 test("unplugging shows an error and returns to disconnected", async ({ page }) => {
@@ -121,6 +147,17 @@ test("a lost reply disconnects cleanly instead of mismatching later replies", as
   await page.getByLabel("Frame rate").selectOption("10"); // queued behind it; must not take its reply
   await expect(page.getByRole("status")).toHaveText("disconnected", { timeout: 8000 });
   await expect(errorBanner(page)).toContainText("Camera stopped responding");
+});
+
+test("tells the user to reflash when the board runs older firmware", async ({ page }) => {
+  await page.evaluate(() => {
+    window.fakeCamera.oldFirmware = true;
+  });
+  await page.getByRole("button", { name: "Connect" }).click();
+  await expect(errorBanner(page)).toHaveText(
+    "Camera firmware is out of date (Unknown command 0x89). Reflash it: make flash",
+  );
+  await expect(page.getByRole("status")).toHaveText("disconnected");
 });
 
 test("explains a board without camera firmware", async ({ page }) => {

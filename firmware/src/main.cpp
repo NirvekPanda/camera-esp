@@ -31,6 +31,7 @@ const FrameSize FRAME_SIZES[] = {
 
 sensor_t* sensor = nullptr;  // null if the camera failed to start
 const FrameSize* requested = &FRAME_SIZES[0];  // may be smaller than the sensor frame (square crops)
+bool baseVflip = false;  // true for sensors mounted upside down; VFLIP toggles relative to it
 bool sdReady = false;
 bool timeSynced = false;
 bool streaming = false;
@@ -69,7 +70,8 @@ bool initCamera() {
   if (esp_camera_init(&config) != ESP_OK) return false;
 
   sensor = esp_camera_sensor_get();
-  if (sensor->id.PID == OV3660_PID) sensor->set_vflip(sensor, 1);  // OV3660 modules are mounted flipped
+  baseVflip = sensor->id.PID == OV3660_PID;  // OV3660 modules are mounted flipped
+  sensor->set_vflip(sensor, baseVflip);
   sensor->set_framesize(sensor, FRAMESIZE_240X240);
   return true;
 }
@@ -227,6 +229,10 @@ void handle(uint8_t type, const uint8_t* payload, uint32_t length) {
     case MIRROR:
       if (length != 1) return sendError("MIRROR needs 1 byte");
       sensor->set_hmirror(sensor, payload[0] ? 1 : 0);
+      return ok();
+    case VFLIP:
+      if (length != 1) return sendError("VFLIP needs 1 byte");
+      sensor->set_vflip(sensor, (payload[0] ? 1 : 0) ^ baseVflip);
       return ok();
     case RESOLUTION:
       if (length != 4) return sendError("RESOLUTION needs 4 bytes");

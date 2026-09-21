@@ -19,7 +19,9 @@ export const RESOLUTIONS: readonly Resolution[] = [
 
 export const FPS_OPTIONS: readonly number[] = [10, 15, 24, 30, 60];
 
-export const DEFAULT_RESOLUTION = RESOLUTIONS[0];
+export const DEFAULT_RESOLUTION = RESOLUTIONS[RESOLUTIONS.length - 1]; // 1920×1080
+// Every sensor supports this; used when the camera rejects the chosen size (OV2640 has no FHD).
+export const FALLBACK_RESOLUTION = RESOLUTIONS[0];
 export const DEFAULT_FPS = 15;
 
 export const resolutionKey = ({ width, height }: Resolution) => `${width}x${height}`;

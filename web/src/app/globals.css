@@ -73,10 +73,13 @@ select:disabled {
   outline-offset: 2px;
 }
 
+/* Left-aligned column so the viewer's resize corner tracks the pointer. */
 main {
-  width: min(480px, 100% - 32px);
+  width: min(1280px, 100% - 32px);
   margin: 24px auto;
-  display: grid;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 24px;
 }
 
@@ -174,10 +177,18 @@ main {
   }
 }
 
-.shutter {
+/* Shutter, then horizontal and vertical flip, stacked in the top-right corner. */
+.viewer-controls {
   position: absolute;
   top: 12px;
   right: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.shutter {
   width: 48px;
   height: 48px;
   padding: 0;
@@ -217,6 +228,10 @@ main {
 }
 
 /* File list */
+.files {
+  width: min(720px, 100%);
+}
+
 .files-head {
   display: flex;
   align-items: center;
@@ -320,11 +335,8 @@ main {
 }
 
 .flip {
-  position: absolute;
-  top: 72px;
-  right: 16px;
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   padding: 0;
   border-radius: 50%;
   border: 2px solid #fff;
@@ -337,4 +349,31 @@ main {
 .flip[aria-pressed="true"] {
   background: #fff;
   color: #000;
+}
+
+.resize-handle {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  color: #fff;
+  background: rgb(0 0 0 / 0.45);
+  cursor: nwse-resize;
+  touch-action: none; /* pointer events instead of page scrolling while dragging */
+  opacity: 0.7;
+  transition: opacity 120ms;
+}
+
+.resize-handle:hover,
+.resize-handle:focus-visible {
+  opacity: 1;
+}
+
+.resize-handle svg {
+  width: 16px;
+  height: 16px;
 }

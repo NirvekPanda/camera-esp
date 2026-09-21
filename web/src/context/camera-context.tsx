@@ -3,7 +3,12 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { MockSource } from "@/lib/camera/mock-source";
 import { SerialSource } from "@/lib/camera/serial-source";
-import { DEFAULT_FPS, DEFAULT_RESOLUTION, type Resolution } from "@/lib/camera/settings";
+import {
+  DEFAULT_FPS,
+  DEFAULT_RESOLUTION,
+  FALLBACK_RESOLUTION,
+  type Resolution,
+} from "@/lib/camera/settings";
 import type { CameraSource, FileEntry } from "@/lib/camera/types";
 import { newestFirst } from "@/lib/filename";
 
@@ -22,12 +27,14 @@ interface CameraContextValue {
   error: string | null;
   files: FileEntry[];
   mirrored: boolean;
+  vflip: boolean;
   resolution: Resolution;
   fps: number;
   connect(id: SourceId): Promise<void>;
   disconnect(): void;
   capture(): Promise<void>;
   toggleMirror(): Promise<void>;
+  toggleVflip(): Promise<void>;
   changeResolution(resolution: Resolution): Promise<void>;
   changeFps(fps: number): Promise<void>;
   refreshFiles(): Promise<void>;
@@ -39,14 +46,21 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 interface Settings {
   mirrored: boolean;
+  vflip: boolean;
   resolution: Resolution;
   fps: number;
 }
 
-const DEFAULT_SETTINGS: Settings = { mirrored: false, resolution: DEFAULT_RESOLUTION, fps: DEFAULT_FPS };
+const DEFAULT_SETTINGS: Settings = {
+  mirrored: false,
+  vflip: false,
+  resolution: DEFAULT_RESOLUTION,
+  fps: DEFAULT_FPS,
+};
 
 const APPLY: { [K in keyof Settings]: (source: CameraSource, value: Settings[K]) => Promise<void> } = {
   mirrored: (source, value) => source.setMirror(value),
+  vflip: (source, value) => source.setVflip(value),
   resolution: (source, value) => source.setResolution(value),
   fps: (source, value) => source.setFps(value),
 };
@@ -81,9 +95,18 @@ export function CameraProvider({ children }: { children: ReactNode }) {
     try {
       await next.connect();
       // Read after the await: settings may have changed while connecting (e.g. permission prompt).
-      const { mirrored, resolution, fps } = settingsRef.current;
+      const { mirrored, vflip, resolution, fps } = settingsRef.current;
       await next.setMirror(mirrored);
-      await next.setResolution(resolution);
+      await next.setVflip(vflip);
+      try {
+        await next.setResolution(resolution);
+      } catch (e) {
+        // e.g. an OV2640 has no 1920×1080 (the default): connect at a size every sensor has.
+        await next.setResolution(FALLBACK_RESOLUTION);
+        settingsRef.current = { ...settingsRef.current, resolution: FALLBACK_RESOLUTION };
+        setSettings(settingsRef.current);
+        setError(message(e));
+      }
       await next.setFps(fps);
       const nextFiles = await next.listFiles();
       // Only publish the source once fully set up, so a failure can't leave a dead "connected" state.
@@ -150,6 +173,7 @@ export function CameraProvider({ children }: { children: ReactNode }) {
         disconnect,
         capture,
         toggleMirror: () => updateSetting("mirrored", !settingsRef.current.mirrored),
+        toggleVflip: () => updateSetting("vflip", !settingsRef.current.vflip),
         changeResolution: (resolution) => updateSetting("resolution", resolution),
         changeFps: (fps) => updateSetting("fps", fps),
         refreshFiles,

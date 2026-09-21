@@ -23,6 +23,7 @@ export const PacketType = {
   MIRROR: 0x86,
   RESOLUTION: 0x87,
   FPS: 0x88,
+  VFLIP: 0x89,
 } as const;
 
 export interface Packet {

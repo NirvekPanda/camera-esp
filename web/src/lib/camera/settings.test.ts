@@ -3,6 +3,7 @@ import {
   DEFAULT_FPS,
   coverCrop,
   DEFAULT_RESOLUTION,
+  FALLBACK_RESOLUTION,
   FPS_OPTIONS,
   RESOLUTIONS,
   parseResolution,
@@ -11,10 +12,14 @@ import {
 } from "./settings";
 
 describe("resolutions", () => {
-  it("includes the square sizes and defaults to the 240×240 display size", () => {
+  it("includes the square sizes and defaults to 1920×1080", () => {
     const keys = RESOLUTIONS.map(resolutionKey);
     expect(keys).toEqual(expect.arrayContaining(["240x240", "480x480", "720x720"]));
-    expect(resolutionKey(DEFAULT_RESOLUTION)).toBe("240x240");
+    expect(resolutionKey(DEFAULT_RESOLUTION)).toBe("1920x1080");
+  });
+
+  it("falls back to the 240×240 display size every sensor supports", () => {
+    expect(resolutionKey(FALLBACK_RESOLUTION)).toBe("240x240");
   });
 
   it("has unique keys", () => {

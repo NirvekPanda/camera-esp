@@ -84,10 +84,12 @@ vendors (`0x303A`, `0x2886`).
   photo names are in local time without timezone support on the device. Photos taken before a sync
   fall back to `IMG_0001.jpg` counters.
 - **Photos on the device** are stored in `/photos/` on the SD card.
-- **Mirror:** the flip button is a camera setting (`setMirror`), not a CSS transform, so saved
-  photos match the preview. The site re-applies it after every reconnect.
+- **Mirror & vertical flip:** both buttons are camera settings (`setMirror` → `set_hmirror`,
+  `setVflip` → `set_vflip`), not CSS transforms, so saved photos match the preview. The site
+  re-applies them after every reconnect. OV3660 modules are mounted upside down, so the firmware
+  keeps a base `vflip` and the button toggles relative to it.
 - **Resolution & frame rate:** picked in the dropdowns under the preview (`lib/camera/settings.ts`).
-  - Resolutions: 240×240 (default, matches the SPI display), 480×480, 720×720, 320×240 (QVGA),
+  - Resolutions: 240×240 (matches the SPI display), 480×480, 720×720, 320×240 (QVGA),
     640×480 (VGA), 800×600 (SVGA), 1280×720 (HD), 1600×1200 (UXGA, OV2640 max) and 1920×1080 (FHD,
     OV3660/OV5640 only). The ESP32 camera driver has no 480×480 or 720×720 frame size, so the
     firmware streams VGA and HD for those, and the site center-crops the preview (`coverCrop`).
@@ -97,7 +99,18 @@ vendors (`0x303A`, `0x2886`).
   - Frame rates: 10, 15 (default), 24, 30 and 60 fps. This is a *target*. The UI shows the actual
     measured fps next to it, because USB caps high resolutions well below 60 fps (measured below).
   - Photos are taken at the stream resolution. The viewport takes the stream's aspect ratio.
+  - **Default: 1920×1080.** If the camera rejects it on connect (an OV2640 tops out at UXGA), the
+    site connects at 240×240 (`FALLBACK_RESOLUTION`, which every sensor supports) and shows the
+    sensor's error rather than failing the connection.
   - Settings can be chosen before connecting and are re-applied on every connect.
+- **Viewer size:** drag the ↘ handle in the viewer's bottom-right corner, or focus it and use the
+  arrow keys (Shift = 100px steps, Home/End = min/max). It's a `role="slider"` in pixels.
+  - Width ranges from 360px, which keeps the stacked shutter + flip buttons clear of the handle at
+    16:9, to 1280px, and is never wider than the page. It starts at 640px.
+  - The height follows the stream's aspect ratio. A drag picks the width whose corner lands
+    closest to the pointer (`dragWidth`).
+  - The page column is left-aligned, so the corner tracks the pointer. The settings row matches
+    the viewer's width, and the photo list is at most 720px wide.
 
 ## 2. Serial protocol (v1)
 
@@ -115,7 +128,7 @@ Binary packets, so JPEGs need no base64:
 | ESP → site | `0x02` | `CAPTURED` | JSON `{name,size}` |
 | ESP → site | `0x03` | `FILE_LIST` | JSON `[{name,size}]` |
 | ESP → site | `0x04` | `FILE_DATA` | JPEG bytes |
-| ESP → site | `0x05` | `OK` | none: reply to `SET_TIME`, `STREAM`, `MIRROR`, `RESOLUTION`, `FPS` |
+| ESP → site | `0x05` | `OK` | none: reply to `SET_TIME`, `STREAM`, `MIRROR`, `VFLIP`, `RESOLUTION`, `FPS` |
 | ESP → site | `0x7F` | `ERROR` | UTF-8 message |
 | site → ESP | `0x81` | `SET_TIME` | u32 LE unix seconds |
 | site → ESP | `0x82` | `CAPTURE` | none |
@@ -125,6 +138,7 @@ Binary packets, so JPEGs need no base64:
 | site → ESP | `0x86` | `MIRROR` | u8 (1 = flipped); firmware calls the sensor's `set_hmirror` |
 | site → ESP | `0x87` | `RESOLUTION` | u16 LE width, u16 LE height (one of `RESOLUTIONS`) |
 | site → ESP | `0x88` | `FPS` | u8 target frames per second |
+| site → ESP | `0x89` | `VFLIP` | u8 (1 = upside down, relative to the sensor's mounting) |
 
 - **Every command gets exactly one reply, in order:** `OK`, its data packet (`CAPTURED`,
   `FILE_LIST`, `FILE_DATA`), or `ERROR` with a message for the UI. `FRAME`s are unsolicited and can
@@ -178,6 +192,7 @@ web/
 │   ├── live-view.spec.ts       # preview renders frames, fps, disconnect, flip
 │   ├── photos.spec.ts          # capture, file list, modal navigation, persistence, mirrored photos
 │   ├── stream-settings.spec.ts # resolution/fps options, resize, photo size, pre-connect settings
+│   ├── viewer.spec.ts          # resizable viewer: drag, clamps, keyboard, button placement, vflip
 │   ├── serial.spec.ts          # USB camera end to end against the fake device (below)
 │   ├── fake-serial-device.js   # fake ESP32 on navigator.serial speaking the firmware protocol
 │   └── firmware.spec.ts        # site serves /firmware/manifest.json + a valid flash image
@@ -188,11 +203,12 @@ web/
     │   └── page.tsx            # CameraProvider + page layout
     ├── components/
     │   ├── ConnectBar.tsx      # source picker, connect/disconnect, status dot, errors
-    │   ├── LiveView.tsx        # canvas preview, shutter + flash, flip, resolution/fps dropdowns
+    │   ├── LiveView.tsx        # canvas preview, shutter + flips, resolution/fps dropdowns, size
+    │   ├── ResizeHandle.tsx    # ↘ corner handle: pointer drag + keyboard slider
     │   ├── FileList.tsx        # saved photos, refresh, click to open
     │   └── ImageModal.tsx      # <dialog> viewer, ← → navigation, download, Esc/backdrop close
     ├── context/
-    │   └── camera-context.tsx  # SOURCE_OPTIONS, source, status, files, mirror/resolution/fps
+    │   └── camera-context.tsx  # SOURCE_OPTIONS, source, status, files, mirror/vflip/resolution/fps
     └── lib/
         ├── camera/
         │   ├── types.ts        # CameraSource interface, FileEntry, FrameListener
@@ -202,6 +218,8 @@ web/
         │   ├── protocol.test.ts
         │   ├── serial-source.ts# USB camera over WebSerial: USB_FILTERS, request/reply queue, frames
         │   └── mock-source.ts  # webcam or test pattern frames, in-memory "SD card"
+        ├── viewer-size.ts      # MIN/MAX/DEFAULT viewer width, clampViewerWidth, dragWidth
+        ├── viewer-size.test.ts
         ├── filename.ts         # YYYYMMDD-HHMMSS formatting/parsing
         └── filename.test.ts
 ```
@@ -226,7 +244,11 @@ firmware/
 
 - **Camera:** OV2640/OV3660 on the Sense board, JPEG quality 12, 2 frame buffers in PSRAM,
   `CAMERA_GRAB_LATEST`. Buffers are allocated for UXGA at init (they can't grow later), then the
-  sensor drops to 240×240. OV3660 modules get `vflip` because they're mounted upside down relative
+  sensor drops to 240×240. FHD has about 8% more pixels than UXGA. That's fine for JPEG: a UXGA
+  JPEG buffer is about 384 KB, and measured FHD frames are about 61 KB. Allocating for FHD instead
+  could fail init on an OV2640.
+- **Out-of-date firmware** answers new commands with `ERROR "Unknown command 0x.."`. The site
+  turns that into "Camera firmware is out of date… Reflash it: make flash". OV3660 modules get `vflip` because they're mounted upside down relative
   to the OV2640.
 - **Loop:** handle any received commands, then send a `FRAME` whenever streaming and the fps
   interval has passed. Streaming starts only when the site sends `STREAM 1`, so an idle port gets no
@@ -254,6 +276,7 @@ interface CameraSource {
   onFrame(listener: (frame: ImageBitmap) => void): () => void; // returns unsubscribe
   onClose(listener: (error: Error) => void): () => void; // camera went away on its own (unplugged)
   setMirror(mirrored: boolean): Promise<void>; // horizontal flip, preview and photos
+  setVflip(flipped: boolean): Promise<void>; // vertical flip, preview and photos
   setResolution(resolution: Resolution): Promise<void>; // stream and photo size
   setFps(fps: number): Promise<void>; // target rate; the transport may deliver less
   capture(): Promise<FileEntry>;
@@ -271,12 +294,13 @@ and not keep a reference.
 ┌─────────────────────────────────────────────┐
 │ ESP Camera  [USB camera ▾] [Connect] ● connected │  ConnectBar
 ├─────────────────────────────────────────────┤
-│   ┌───────────────────────────────┐         │
-│   │                          [◉]  │         │  LiveView (shutter overlay)
-│   │                          [⇋]  │         │  flip (mirror) below shutter
-│   │      live view 480×480        │         │
-│   └───────────────────────────────┘         │
-│   [240×240 ▾] [15 fps ▾]      15 fps actual │
+│ ┌───────────────────────────────┐           │
+│ │                          [◉]  │           │  LiveView: shutter,
+│ │                          [⇋]  │           │  horizontal flip,
+│ │   live view (1920×1080)  [⇅]  │           │  vertical flip
+│ │                           ↘   │           │  resize handle (360–1280px)
+│ └───────────────────────────────┘           │
+│ [1920×1080 ▾] [15 fps ▾]     15 fps actual  │
 ├─────────────────────────────────────────────┤
 │ Photos (3)                       [Refresh]  │  FileList
 │  20260921-142305.jpg   11 KB   2:23 PM      │
@@ -319,13 +343,14 @@ The full rules live in `CLAUDE.md`. In short:
 13. [x] `make flash` / `make upload`, `make hwtest`, firmware image + manifest exported to the site
 14. [ ] Flash firmware from the site over WebSerial (esptool-js, using `/firmware/manifest.json`)
 15. [x] Crop 480×480 / 720×720 photos on the device (untested on hardware: needs an SD card)
+16. [x] Resizable viewer (↘ handle, 360–1280px), vertical flip (`VFLIP`), 1920×1080 default with fallback
 
 **Phase 2: device + deploy**
-16. [ ] SPI display shows live view; 5-way switch takes pictures
-17. [ ] On-device file preview menu (240×240)
-18. [ ] Deploy to `camera.nirvek.xyz`: run `./start.sh` on the Proxmox host, add the tunnel
+17. [ ] SPI display shows live view; 5-way switch takes pictures
+18. [ ] On-device file preview menu (240×240)
+19. [ ] Deploy to `camera.nirvek.xyz`: run `./start.sh` on the Proxmox host, add the tunnel
     hostname → `http://<host>:8888` (fix the garbled `cloudflare-domain-setup.md` first)
-19. [ ] Date range filter, camera animations (README step 3)
+20. [ ] Date range filter, camera animations (README step 3)
 
 **Phase 3: features**
 - [ ] WiFi transport (`WifiSource`)
