@@ -377,3 +377,77 @@ main {
   width: 16px;
   height: 16px;
 }
+
+/* Page tabs */
+.bar h1 {
+  margin-right: auto;
+}
+
+.tabs {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.tabs a {
+  padding: 4px 14px;
+  border-radius: 6px;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.tabs a[aria-current="page"] {
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.1);
+}
+
+/* Device emulator */
+.device {
+  width: 100%; /* so the screen's min(480px, 100%) sizes against the page, not itself */
+}
+
+.device-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 24px;
+}
+
+.device-screen {
+  width: min(480px, 100%); /* 2x, pixel-exact */
+  aspect-ratio: 1;
+  image-rendering: pixelated;
+  border: 10px solid #1d1f22; /* bezel */
+  border-radius: 14px;
+  background: #000;
+}
+
+.dpad {
+  display: grid;
+  grid-template: repeat(3, 48px) / repeat(3, 48px);
+  gap: 6px;
+}
+
+.dpad button {
+  padding: 0;
+  font-size: 1.1rem;
+  border-radius: 12px;
+}
+
+.dpad-up { grid-area: 1 / 2; }
+.dpad-left { grid-area: 2 / 1; }
+.dpad-center { grid-area: 2 / 2; border-radius: 50%; }
+.dpad-right { grid-area: 2 / 3; }
+.dpad-down { grid-area: 3 / 2; }
+
+.device-note {
+  margin-top: 12px;
+  max-width: 60ch;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
