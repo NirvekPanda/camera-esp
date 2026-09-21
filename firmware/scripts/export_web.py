@@ -54,5 +54,12 @@ def export(source, target, env):
     print(f"Exported {IMAGE} ({manifest['version']}) to web/public/firmware/")
 
 
-# The size check runs on every build, even when nothing relinked, so the export never goes stale.
-env.AddPostAction("checkprogsize", export)  # noqa: F821
+def export_if_built(source, target, env):
+    if os.path.exists(os.path.join(env.subst("$BUILD_DIR"), "firmware.bin")):
+        export(source, target, env)
+
+
+# Export when the app binary is (re)built, and also on up-to-date builds (the size check always
+# runs, but on a clean build it runs before firmware.bin exists), so the export never goes stale.
+env.AddPostAction("$BUILD_DIR/${PROGNAME}.bin", export)  # noqa: F821
+env.AddPostAction("checkprogsize", export_if_built)  # noqa: F821
