@@ -9,16 +9,17 @@ Import("env")  # noqa: F821 (provided by PlatformIO)
 
 OUT_DIR = os.path.join(env.subst("$PROJECT_DIR"), "..", "web", "public", "firmware")  # noqa: F821
 IMAGE = "camera-esp.bin"
+IMAGE_SOURCES = ["src", "platformio.ini"]
 
 
 def git_version(project_dir):
-    """Last commit touching the firmware sources, "-dirty" if they have uncommitted edits.
-    Scoped to firmware/ so committing the exported image doesn't change its own version."""
+    """Last commit touching what goes into the image (src/, platformio.ini), "-dirty" if those
+    have uncommitted edits. Tools, scripts and the exported files don't change the version."""
     def git(*args):
         return subprocess.check_output(["git", *args], cwd=project_dir, text=True).strip()
     try:
-        version = git("log", "-1", "--format=%h", "--", ".") or "uncommitted"
-        return version + ("-dirty" if git("status", "--porcelain", "--", ".") else "")
+        version = git("log", "-1", "--format=%h", "--", *IMAGE_SOURCES) or "uncommitted"
+        return version + ("-dirty" if git("status", "--porcelain", "--", *IMAGE_SOURCES) else "")
     except (OSError, subprocess.CalledProcessError):
         return "unknown"
 

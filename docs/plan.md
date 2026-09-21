@@ -237,8 +237,8 @@ firmware/
 - **Flashing:** `make flash` (or `make upload`) from the CLI. Every build also exports
   `web/public/firmware/camera-esp.bin`. That's a merged image (bootloader, partitions, boot_app0,
   app) to write at `0x0`, the same parts and offsets `pio run -t upload` uses. `manifest.json` next
-  to it records `version`: the last commit touching `firmware/`, plus `-dirty` for uncommitted
-  firmware edits. The site serves both files, ready for the WebSerial flashing UI (esptool-js, next
+  to it records `version`: the last commit touching the image's sources (`firmware/src/`,
+  `platformio.ini`), plus `-dirty` for uncommitted edits to them. The site serves both files, ready for the WebSerial flashing UI (esptool-js, next
   step). **Workflow:** commit firmware source changes, run `make build`, then commit the exported
   files, so the served image matches a real commit.
 

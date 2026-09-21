@@ -103,7 +103,10 @@ def find_port():
 def main():
     port = sys.argv[1] if len(sys.argv) > 1 else find_port()
     print(f"Camera on {port}")
-    cam = Camera(port)
+    try:
+        cam = Camera(port)
+    except serial.SerialException as e:
+        sys.exit(f"Can't open {port}: {e.strerror or e}. If the site is connected, click Disconnect first.")
     failures = 0
 
     def check(name, fn):
