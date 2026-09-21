@@ -3,7 +3,6 @@ web/public/firmware/ so the website can flash the board over WebSerial (esptool-
 import json
 import os
 import subprocess
-from datetime import datetime, timezone
 
 Import("env")  # noqa: F821 (provided by PlatformIO)
 
@@ -39,10 +38,10 @@ def export(source, target, env):
         cmd += [offset, path]
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
 
+    # No build timestamp: identical sources give an identical export (and a clean git tree).
     manifest = {
         "name": "camera-esp",
         "version": git_version(env.subst("$PROJECT_DIR")),
-        "built": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "chip": "ESP32-S3",
         "board": env.subst("$BOARD"),
         "image": IMAGE,
