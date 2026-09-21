@@ -17,6 +17,7 @@ export interface CameraSource {
   /** Fires when the camera goes away on its own (e.g. unplugged), never after disconnect(). */
   onClose(listener: (error: Error) => void): () => void;
   setMirror(mirrored: boolean): Promise<void>; // horizontal flip, applied to preview and photos
+  setVflip(flipped: boolean): Promise<void>; // vertical flip, applied to preview and photos
   setResolution(resolution: Resolution): Promise<void>; // stream and photo size
   setFps(fps: number): Promise<void>; // target rate; the transport may deliver less
   capture(): Promise<FileEntry>;

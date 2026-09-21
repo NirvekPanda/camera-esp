@@ -16,7 +16,7 @@ from serial.tools import list_ports
 
 MAGIC = b"\xa5\x5a"
 FRAME, CAPTURED, FILE_LIST, FILE_DATA, OK, ERROR = 0x01, 0x02, 0x03, 0x04, 0x05, 0x7F
-SET_TIME, CAPTURE, LIST, GET_FILE, STREAM, MIRROR, RESOLUTION, FPS = range(0x81, 0x89)
+SET_TIME, CAPTURE, LIST, GET_FILE, STREAM, MIRROR, RESOLUTION, FPS, VFLIP = range(0x81, 0x8A)
 USB_VENDOR_IDS = {0x303A, 0x2886}  # Espressif USB Serial/JTAG, Seeed
 
 # (requested, expected sensor frame): 480x480 and 720x720 arrive as VGA/HD for the site to crop.
@@ -142,6 +142,7 @@ def main():
     print()
 
     check("mirror on/off", lambda: (cam.request(MIRROR, b"\x01"), cam.request(MIRROR, b"\x00")) and None)
+    check("vertical flip on/off", lambda: (cam.request(VFLIP, b"\x01"), cam.request(VFLIP, b"\x00")) and None)
 
     def photos():
         photo = json.loads(cam.request(CAPTURE, expect=CAPTURED))

@@ -21,6 +21,7 @@ export class MockSource implements CameraSource {
   private timer: number | null = null;
   private frameCount = 0;
   private mirrored = false;
+  private vflip = false;
   private fps = DEFAULT_FPS;
 
   constructor(input: MockInput) {
@@ -77,6 +78,10 @@ export class MockSource implements CameraSource {
     this.mirrored = mirrored;
   }
 
+  async setVflip(flipped: boolean) {
+    this.vflip = flipped;
+  }
+
   async setResolution({ width, height }: Resolution) {
     // Resizing clears the canvas; redraw so an immediate capture isn't blank.
     this.canvas.width = width;
@@ -129,8 +134,12 @@ export class MockSource implements CameraSource {
   }
 
   private draw() {
-    // Mirror in the frame itself, like the sensor's hmirror, so photos match the preview.
-    this.ctx.setTransform(this.mirrored ? -1 : 1, 0, 0, 1, this.mirrored ? this.canvas.width : 0, 0);
+    // Flip in the frame itself, like the sensor's hmirror/vflip, so photos match the preview.
+    const { width, height } = this.canvas;
+    this.ctx.setTransform(
+      this.mirrored ? -1 : 1, 0, 0, this.vflip ? -1 : 1,
+      this.mirrored ? width : 0, this.vflip ? height : 0,
+    );
     if (this.video) this.drawWebcam(this.video);
     else this.drawPattern();
   }

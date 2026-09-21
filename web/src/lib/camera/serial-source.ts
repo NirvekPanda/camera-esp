@@ -96,6 +96,10 @@ export class SerialSource implements CameraSource {
     await this.request(PacketType.MIRROR, u8(mirrored ? 1 : 0));
   }
 
+  async setVflip(flipped: boolean) {
+    await this.request(PacketType.VFLIP, u8(flipped ? 1 : 0));
+  }
+
   async setResolution({ width, height }: Resolution) {
     await this.request(PacketType.RESOLUTION, u16Pair(width, height));
   }

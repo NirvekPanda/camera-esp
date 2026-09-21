@@ -25,7 +25,7 @@ test("modal opens the photo, navigates, and closes", async ({ page }) => {
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole("img")).toHaveJSProperty("complete", true);
-  expect(await dialog.getByRole("img").evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(240);
+  expect(await dialog.getByRole("img").evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(1920);
   await expect(dialog.getByRole("button", { name: "Previous photo" })).toBeDisabled();
 
   await page.keyboard.press("ArrowRight");

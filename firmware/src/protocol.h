@@ -27,6 +27,7 @@ enum Type : uint8_t {
   MIRROR = 0x86,
   RESOLUTION = 0x87,
   FPS = 0x88,
+  VFLIP = 0x89,
 };
 
 // Writes return false when USB dropped bytes (the host stopped reading for longer than the TX timeout).

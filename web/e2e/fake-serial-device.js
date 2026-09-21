@@ -7,17 +7,19 @@
   const T = {
     FRAME: 0x01, CAPTURED: 0x02, FILE_LIST: 0x03, FILE_DATA: 0x04, OK: 0x05, ERROR: 0x7f,
     SET_TIME: 0x81, CAPTURE: 0x82, LIST: 0x83, GET_FILE: 0x84, STREAM: 0x85, MIRROR: 0x86,
-    RESOLUTION: 0x87, FPS: 0x88,
+    RESOLUTION: 0x87, FPS: 0x88, VFLIP: 0x89,
   };
-  // Like the firmware: square crops arrive as VGA/HD, and this fake is an OV2640 (no FHD).
+  // Like the firmware: square crops arrive as VGA/HD. An OV2640 has no 1920×1080.
   const SENSOR_FRAME = { "480x480": [640, 480], "720x720": [1280, 720] };
-  const SUPPORTED = ["240x240", "480x480", "720x720", "320x240", "640x480", "800x600", "1280x720", "1600x1200"];
+  const RESOLUTIONS = ["240x240", "480x480", "720x720", "320x240", "640x480", "800x600", "1280x720", "1600x1200", "1920x1080"];
 
   const camera = {
     silent: false, // true = no firmware: never replies
     dropNextReply: false, // true = lose the next reply, like bytes dropped on the USB link
     streaming: false,
+    sensor: "OV3660", // or "OV2640"
     mirrored: false,
+    vflip: false,
     size: [240, 240],
     fps: 15,
     clock: null, // seconds, as sent by SET_TIME
@@ -94,13 +96,17 @@
       case T.MIRROR:
         camera.mirrored = payload[0] === 1;
         return send(T.OK);
+      case T.VFLIP:
+        camera.vflip = payload[0] === 1;
+        return send(T.OK);
       case T.FPS:
         camera.fps = payload[0];
         restartStream();
         return send(T.OK);
       case T.RESOLUTION: {
         const key = `${view.getUint16(0, true)}x${view.getUint16(2, true)}`;
-        if (!SUPPORTED.includes(key)) return sendText(T.ERROR, `${key.replace("x", "×")} isn't supported by this camera sensor`);
+        const supported = RESOLUTIONS.includes(key) && !(camera.sensor === "OV2640" && key === "1920x1080");
+        if (!supported) return sendText(T.ERROR, `${key.replace("x", "×")} isn't supported by this camera sensor`);
         camera.size = SENSOR_FRAME[key] ?? key.split("x").map(Number);
         return send(T.OK);
       }

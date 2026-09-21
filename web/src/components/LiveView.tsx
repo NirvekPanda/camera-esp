@@ -10,22 +10,27 @@ import {
   resolutionKey,
   resolutionLabel,
 } from "@/lib/camera/settings";
+import { DEFAULT_VIEWER_WIDTH } from "@/lib/viewer-size";
+import { ResizeHandle } from "./ResizeHandle";
 
 export function LiveView() {
   const {
     source,
     status,
     mirrored,
+    vflip,
     resolution,
     fps,
     capture,
     toggleMirror,
+    toggleVflip,
     changeResolution,
     changeFps,
   } = useCamera();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [measuredFps, setMeasuredFps] = useState(0);
   const [flashKey, setFlashKey] = useState(0);
+  const [viewerWidth, setViewerWidth] = useState(DEFAULT_VIEWER_WIDTH);
 
   useEffect(() => {
     const ctx = canvasRef.current?.getContext("2d");
@@ -53,7 +58,8 @@ export function LiveView() {
   const live = status === "connected";
 
   return (
-    <section className="live" aria-label="Live camera preview">
+    // min(): never wider than the page, whatever size was chosen on a wider window.
+    <section className="live" aria-label="Live camera preview" style={{ width: `min(${viewerWidth}px, 100%)` }}>
       <div className="viewport" style={{ aspectRatio: `${resolution.width} / ${resolution.height}` }}>
         <canvas ref={canvasRef} width={resolution.width} height={resolution.height} />
         {!live && (
@@ -62,24 +68,40 @@ export function LiveView() {
           </p>
         )}
         {flashKey > 0 && <div key={flashKey} className="flash" aria-hidden />}
-        <button
-          className="shutter"
-          aria-label="Take picture"
-          disabled={!live}
-          onClick={() => {
-            setFlashKey((k) => k + 1);
-            void capture();
-          }}
+        <div className="viewer-controls" role="toolbar" aria-label="Camera controls" aria-orientation="vertical">
+          <button
+            className="shutter"
+            aria-label="Take picture"
+            disabled={!live}
+            onClick={() => {
+              setFlashKey((k) => k + 1);
+              void capture();
+            }}
+          />
+          <button
+            className="flip"
+            aria-label="Flip horizontally"
+            aria-pressed={mirrored}
+            disabled={!live}
+            onClick={() => void toggleMirror()}
+          >
+            ⇋
+          </button>
+          <button
+            className="flip"
+            aria-label="Flip vertically"
+            aria-pressed={vflip}
+            disabled={!live}
+            onClick={() => void toggleVflip()}
+          >
+            ⇅
+          </button>
+        </div>
+        <ResizeHandle
+          width={viewerWidth}
+          aspect={resolution.width / resolution.height}
+          onResize={setViewerWidth}
         />
-        <button
-          className="flip"
-          aria-label="Flip horizontally"
-          aria-pressed={mirrored}
-          disabled={!live}
-          onClick={() => void toggleMirror()}
-        >
-          ⇋
-        </button>
       </div>
       <div className="stream-settings">
         <select

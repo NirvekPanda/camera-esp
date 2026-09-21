@@ -79,6 +79,8 @@ Before **every** commit to this repo:
   `firmware/src/protocol.h` and the test double `web/e2e/fake-serial-device.js`, plus the table in
   `docs/plan.md`. Every command gets exactly one reply.
 - `web/src/lib/camera/settings.ts` `RESOLUTIONS` must match `FRAME_SIZES` in `main.cpp`.
+- A new camera setting touches: the `CameraSource` interface, both sources, `Settings`/`APPLY` in
+  `camera-context.tsx`, the protocol (three places), `main.cpp`, `hwtest.py` and the docs.
 - Firmware changes must pass `make flash && make hwtest` on the real board before a PR. Say so in
   the PR if no board was available.
 - Every build exports `web/public/firmware/` (merged image + manifest). Commit the firmware source
