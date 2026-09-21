@@ -64,3 +64,47 @@ test("frame rate changes the delivered fps", async ({ page }) => {
   await page.getByLabel("Frame rate").selectOption("30");
   await expect.poll(() => measuredFps(page), { timeout: 5000 }).toBeGreaterThanOrEqual(20);
 });
+
+// Size and top-left pixel of the newest photo, read from the image modal.
+async function newestPhoto(page: Page) {
+  await page.locator(".files li button").first().click();
+  const img = page.getByRole("dialog").getByRole("img");
+  await expect(img).toHaveJSProperty("complete", true);
+  const result = await img.evaluate((el: HTMLImageElement) => {
+    const canvas = new OffscreenCanvas(el.naturalWidth, el.naturalHeight);
+    const ctx = canvas.getContext("2d")!;
+    ctx.drawImage(el, 0, 0);
+    return { size: [el.naturalWidth, el.naturalHeight], pixel: [...ctx.getImageData(5, 5, 1, 1).data.slice(0, 3)] };
+  });
+  await page.keyboard.press("Escape");
+  return result;
+}
+
+test("settings changed while connecting are applied to the camera", async ({ page }) => {
+  // Simulate a slow permission prompt so there's time to change settings mid-connect.
+  await page.addInitScript(() => {
+    const original = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    navigator.mediaDevices.getUserMedia = (constraints) =>
+      new Promise((resolve) => setTimeout(() => resolve(original(constraints)), 1500));
+  });
+  await page.goto("/");
+  await page.getByLabel("Camera source").selectOption({ label: "Mock: webcam" });
+  await page.getByRole("button", { name: "Connect" }).click();
+  await expect(page.getByRole("status")).toHaveText("connecting");
+  await page.getByLabel("Resolution").selectOption("1280x720");
+  await expect(page.getByRole("status")).toHaveText("connected");
+
+  await page.getByRole("button", { name: "Take picture" }).click();
+  expect((await newestPhoto(page)).size).toEqual([1280, 720]);
+});
+
+test("a photo taken right after a resolution change is not blank", async ({ page }) => {
+  await connect(page);
+  await page.getByLabel("Frame rate").selectOption("10"); // widen the gap between ticks
+  await page.getByLabel("Resolution").selectOption("640x480");
+  await page.getByRole("button", { name: "Take picture" }).click();
+  const photo = await newestPhoto(page);
+  expect(photo.size).toEqual([640, 480]);
+  // Test pattern's first bar is white; a cleared canvas would be black.
+  expect(Math.min(...photo.pixel)).toBeGreaterThan(200);
+});

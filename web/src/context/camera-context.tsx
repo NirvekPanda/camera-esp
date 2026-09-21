@@ -35,16 +35,28 @@ const CameraContext = createContext<CameraContextValue | null>(null);
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
+interface Settings {
+  mirrored: boolean;
+  resolution: Resolution;
+  fps: number;
+}
+
+const DEFAULT_SETTINGS: Settings = { mirrored: false, resolution: DEFAULT_RESOLUTION, fps: DEFAULT_FPS };
+
+const APPLY: { [K in keyof Settings]: (source: CameraSource, value: Settings[K]) => Promise<void> } = {
+  mirrored: (source, value) => source.setMirror(value),
+  resolution: (source, value) => source.setResolution(value),
+  fps: (source, value) => source.setFps(value),
+};
+
 export function CameraProvider({ children }: { children: ReactNode }) {
   const [source, setSource] = useState<CameraSource | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [files, setFiles] = useState<FileEntry[]>([]);
-  const [mirrored, setMirrored] = useState(false);
-  // Latest requested value, so rapid clicks toggle from the pending state, not a stale render.
-  const mirrorRef = useRef(false);
-  const [resolution, setResolution] = useState<Resolution>(DEFAULT_RESOLUTION);
-  const [fps, setFps] = useState(DEFAULT_FPS);
+  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+  // Latest requested values. connect() and rapid clicks read these, never a stale render's state.
+  const settingsRef = useRef(DEFAULT_SETTINGS);
 
   // Disconnecting happens here, so replacing the source or unmounting always releases it.
   useEffect(() => {
@@ -59,8 +71,9 @@ export function CameraProvider({ children }: { children: ReactNode }) {
     const next = SOURCE_OPTIONS[id].create();
     try {
       await next.connect();
-      // Apply the chosen settings, so they survive reconnects and can be picked before connecting.
-      await next.setMirror(mirrorRef.current);
+      // Read after the await: settings may have changed while connecting (e.g. permission prompt).
+      const { mirrored, resolution, fps } = settingsRef.current;
+      await next.setMirror(mirrored);
       await next.setResolution(resolution);
       await next.setFps(fps);
       const nextFiles = await next.listFiles();
@@ -90,33 +103,17 @@ export function CameraProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  async function toggleMirror() {
+  // Optimistic: shows the new value at once. Without a source it's applied on the next connect.
+  async function updateSetting<K extends keyof Settings>(key: K, value: Settings[K]) {
+    const before = settingsRef.current[key];
+    settingsRef.current = { ...settingsRef.current, [key]: value };
+    setSettings(settingsRef.current);
     if (!source) return;
-    const next = !mirrorRef.current;
-    mirrorRef.current = next;
     try {
-      await source.setMirror(next);
-      setMirrored(next);
+      await APPLY[key](source, value);
     } catch (e) {
-      mirrorRef.current = !next;
-      setError(message(e));
-    }
-  }
-
-  async function changeResolution(next: Resolution) {
-    try {
-      await source?.setResolution(next);
-      setResolution(next);
-    } catch (e) {
-      setError(message(e));
-    }
-  }
-
-  async function changeFps(next: number) {
-    try {
-      await source?.setFps(next);
-      setFps(next);
-    } catch (e) {
+      settingsRef.current = { ...settingsRef.current, [key]: before };
+      setSettings(settingsRef.current);
       setError(message(e));
     }
   }
@@ -139,15 +136,13 @@ export function CameraProvider({ children }: { children: ReactNode }) {
         status,
         error,
         files,
-        mirrored,
-        resolution,
-        fps,
+        ...settings,
         connect,
         disconnect,
         capture,
-        toggleMirror,
-        changeResolution,
-        changeFps,
+        toggleMirror: () => updateSetting("mirrored", !settingsRef.current.mirrored),
+        changeResolution: (resolution) => updateSetting("resolution", resolution),
+        changeFps: (fps) => updateSetting("fps", fps),
         refreshFiles,
       }}
     >

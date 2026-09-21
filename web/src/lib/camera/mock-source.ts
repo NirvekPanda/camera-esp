@@ -42,6 +42,7 @@ export class MockSource implements CameraSource {
       this.video.srcObject = stream;
       await this.video.play();
     }
+    this.draw(); // so a photo taken before the first tick isn't blank
     this.startTimer();
   }
 
@@ -64,8 +65,10 @@ export class MockSource implements CameraSource {
   }
 
   async setResolution({ width, height }: Resolution) {
+    // Resizing clears the canvas; redraw so an immediate capture isn't blank.
     this.canvas.width = width;
     this.canvas.height = height;
+    this.draw();
   }
 
   async setFps(fps: number) {
@@ -105,14 +108,18 @@ export class MockSource implements CameraSource {
 
   private async tick() {
     this.frameCount++;
-    // Mirror in the frame itself, like the sensor's hmirror, so photos match the preview.
-    this.ctx.setTransform(this.mirrored ? -1 : 1, 0, 0, 1, this.mirrored ? this.canvas.width : 0, 0);
-    if (this.video) this.drawWebcam(this.video);
-    else this.drawPattern();
+    this.draw();
     if (this.listeners.size === 0) return;
     const frame = await createImageBitmap(this.canvas);
     this.listeners.forEach((listener) => listener(frame));
     frame.close();
+  }
+
+  private draw() {
+    // Mirror in the frame itself, like the sensor's hmirror, so photos match the preview.
+    this.ctx.setTransform(this.mirrored ? -1 : 1, 0, 0, 1, this.mirrored ? this.canvas.width : 0, 0);
+    if (this.video) this.drawWebcam(this.video);
+    else this.drawPattern();
   }
 
   // Center-crop to the output aspect ratio, like the device's cropped frame sizes.
