@@ -64,6 +64,7 @@ Before **every** commit to this repo:
 
 ## Repo root commands
 
+- `make` / `make help`: list targets. Give every new target a `## description` so it shows up there.
 - `make flash [PORT=...]`: build and flash the firmware. `make monitor`: serial monitor.
 - `make web` / `make stop` / `make restart`: `./start.sh` deploy, stop and restart of the site on
   nginx at port 8888 (→ `camera.nirvek.xyz` via the Cloudflare tunnel).

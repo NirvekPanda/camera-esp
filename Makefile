@@ -1,30 +1,31 @@
-# make flash [PORT=/dev/cu.usbmodemXXXX]   build + flash firmware (port auto-detected if omitted)
-# make monitor [PORT=...]                  serial monitor
-# make web | stop | restart                ./start.sh (deploy site to nginx on port 8888)
-# make check                               web lint, types, unit and integration tests
-
 PIO ?= pio
 PORT ?=
 
-.PHONY: build flash monitor web stop restart check
+.DEFAULT_GOAL := help
+.PHONY: help build flash monitor web stop restart check
 
-build:
+help: ## Show this help
+	@echo "Usage: make <target> [PORT=/dev/cu.usbmodemXXXX]"
+	@echo
+	@grep -E '^[a-z]+:.*## ' $(MAKEFILE_LIST) | awk -F ':.*## ' '{ printf "  \033[1m%-9s\033[0m %s\n", $$1, $$2 }'
+
+build: ## Build the firmware
 	$(PIO) run -d firmware
 
-flash:
+flash: ## Build and flash the firmware (PORT auto-detected if omitted)
 	$(PIO) run -d firmware -t upload $(if $(PORT),--upload-port $(PORT))
 
-monitor:
+monitor: ## Open the serial monitor
 	$(PIO) device monitor -d firmware $(if $(PORT),--port $(PORT))
 
-web:
+web: ## Deploy/relaunch the site on nginx port 8888 (./start.sh)
 	./start.sh
 
-stop:
+stop: ## Stop the site and free port 8888 (./start.sh stop)
 	./start.sh stop
 
-restart:
+restart: ## Restart the site without pulling (./start.sh restart)
 	./start.sh restart
 
-check:
+check: ## Web lint, types, unit and integration tests
 	cd web && npm run check

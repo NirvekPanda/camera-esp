@@ -34,6 +34,7 @@
 
 | Command | Does |
 |---|---|
+| `make` / `make help` | list all targets (default goal) |
 | `make flash [PORT=/dev/cu.usbmodemXXXX]` | build + flash firmware (port auto-detected) |
 | `make monitor` / `make build` | serial monitor / build firmware only |
 | `make web` = `./start.sh` | git pull, stop other copies on 8888, build, publish to nginx, health check |
@@ -138,7 +139,7 @@ web/
 Outside `web/`:
 
 ```
-Makefile                        # flash, monitor, build, web, stop, restart, check
+Makefile                        # help (default), flash, monitor, build, web, stop, restart, check
 start.sh                        # deploy / stop / restart the site on nginx
 deploy/nginx.conf               # server block template (__PORT__, __ROOT__)
 firmware/
