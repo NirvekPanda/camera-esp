@@ -87,6 +87,21 @@ Before **every** commit to this repo:
   first, then `make build`, then commit the exported files, so the manifest version is a real
   commit and not `-dirty`.
 
+## Device UI (`firmware/lib/ui/`)
+
+- Portable C++17: no Arduino, no heap, no RTTI or exceptions. The same code runs on the ESP32 and
+  as WASM on the site's Device tab. Design: `docs/wii-theme.md`.
+- **Deterministic:** integer or fixed-point math only (no floats or `sin` in rendering), and
+  `-ffp-contract=off` for both builds. The native tests and the browser test check the same golden
+  hash (`firmware/test_ui/golden.h`).
+- Test first with `make uitest`. If pixels change on purpose, look at `make ui-preview`, then update
+  `EXPECTED_HASH`.
+- After changing UI code, run `make wasm` and commit `web/public/wasm/device-ui.wasm`. `npm test`
+  fails if the `.wasm` doesn't match `golden.h`.
+- Only draw what the ST7789 emulator decodes: the site must show the SPI output, never the
+  framebuffer directly.
+- Wii-*inspired* only: no Nintendo assets, fonts, sounds or names.
+
 ## Git
 
 - Commit and push with `git` / `gh`. The remote is `camera-esp` →

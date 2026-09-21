@@ -18,6 +18,8 @@ jobs:
           node-version-file: web/.nvmrc
           cache: npm
           cache-dependency-path: web/package-lock.json
+      - run: make uitest # device UI: native C++ tests + golden frames
+        working-directory: .
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run check
