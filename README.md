@@ -26,8 +26,10 @@ Once website can see live display of content for plugged in device
 5. start working on making the SPI display show the content directly
 6. add button clicking to take picutres of displayed content
 7. design a file preview selection menu for the 240x240 display
+8. deploy website to camera.nirvek.xyz using cloudflare-setup for proxmox server
 
 ### Extra features:
 8. add orientention changing to the camera
 9. add OTA image uploading to camera site (camera.nirvek.xyz) 
-   1.  full camera image backup and preview
+   1.  full camera images backup and preview of plugged in camera
+
