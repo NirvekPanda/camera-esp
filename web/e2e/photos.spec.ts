@@ -53,9 +53,9 @@ test("photos taken while flipped are mirrored", async ({ page }) => {
     .poll(() =>
       page
         .locator(".viewport canvas")
-        .evaluate((c: HTMLCanvasElement) => c.getContext("2d")!.getImageData(5, 5, 1, 1).data[0]),
+        .evaluate((c: HTMLCanvasElement) => [...c.getContext("2d")!.getImageData(5, 5, 1, 1).data]),
     )
-    .toBe(0);
+    .toEqual([0, 0, 255, 255]);
   await page.getByRole("button", { name: "Take picture" }).click();
   await page.locator(".files li button").first().click();
   const img = page.getByRole("dialog").getByRole("img");

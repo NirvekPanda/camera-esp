@@ -61,7 +61,10 @@ reload, so a bad config never takes down other sites. It re-runs itself if a pul
 
 - **Filenames:** `YYYYMMDD-HHMMSS.jpg` (e.g. `20260921-142305.jpg`). FAT32 forbids `:`, and this
   format sorts chronologically and filters by date with a prefix check. Same-second duplicates get
-  `_2`, `_3`, … (`20260921-142305_2.jpg`). `_` sorts after `.`, so newest-first order holds.
+  `_02`, `_03`, … (`20260921-142305_02.jpg`), zero-padded so `_10` sorts after `_09`. Sort with
+  plain code-unit order (`newestFirst` in `lib/filename.ts`), not `localeCompare`: locale collation
+  puts `_` before `.` and would list the original above its newer duplicates. Firmware must use the
+  same naming.
 - **Time:** the ESP has no RTC. On connect the site sends `SET_TIME(epoch)`. Photos taken before a
   sync fall back to `IMG_0001.jpg` counters.
 - **Mirror:** the flip button is a camera setting (`setMirror`), not a CSS transform, so saved

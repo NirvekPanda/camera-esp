@@ -7,6 +7,17 @@ export function photoName(d: Date): string {
   return `${date}-${time}.jpg`;
 }
 
+/** Duplicate suffix for photos taken in the same second: _02, _03, ... (padded so _10 sorts after _09). */
+export const duplicateName = (name: string, n: number) =>
+  name.replace(".jpg", `_${String(n).padStart(2, "0")}.jpg`);
+
+/**
+ * Newest first. Plain code-unit order, not localeCompare: ICU collation sorts "_" before ".",
+ * which would put 142305_02.jpg ahead of its original.
+ */
+export const newestFirst = <T extends { name: string }>(files: T[]) =>
+  [...files].sort((a, b) => (a.name < b.name ? 1 : a.name > b.name ? -1 : 0));
+
 const PHOTO_DATE = /^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})/;
 
 export function parsePhotoDate(name: string): Date | null {

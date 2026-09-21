@@ -1,8 +1,9 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { MockSource } from "@/lib/camera/mock-source";
 import type { CameraSource, FileEntry } from "@/lib/camera/types";
+import { newestFirst } from "@/lib/filename";
 
 export const SOURCE_OPTIONS = {
   webcam: { label: "Mock: webcam", create: () => new MockSource("webcam") },
@@ -27,8 +28,6 @@ interface CameraContextValue {
 
 const CameraContext = createContext<CameraContextValue | null>(null);
 
-// Names are YYYYMMDD-HHMMSS, so reverse string order is newest first.
-const newestFirst = (files: FileEntry[]) => [...files].sort((a, b) => b.name.localeCompare(a.name));
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 export function CameraProvider({ children }: { children: ReactNode }) {
@@ -37,6 +36,8 @@ export function CameraProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [mirrored, setMirrored] = useState(false);
+  // Latest requested value, so rapid clicks toggle from the pending state, not a stale render.
+  const mirrorRef = useRef(false);
 
   // Disconnecting happens here, so replacing the source or unmounting always releases it.
   useEffect(() => {
@@ -51,9 +52,11 @@ export function CameraProvider({ children }: { children: ReactNode }) {
     const next = SOURCE_OPTIONS[id].create();
     try {
       await next.connect();
-      await next.setMirror(mirrored); // keep the flip setting across reconnects
+      await next.setMirror(mirrorRef.current); // keep the flip setting across reconnects
+      const nextFiles = await next.listFiles();
+      // Only publish the source once fully set up, so a failure can't leave a dead "connected" state.
       setSource(next);
-      setFiles(newestFirst(await next.listFiles()));
+      setFiles(newestFirst(nextFiles));
     } catch (e) {
       void next.disconnect();
       setError(message(e));
@@ -79,10 +82,13 @@ export function CameraProvider({ children }: { children: ReactNode }) {
 
   async function toggleMirror() {
     if (!source) return;
+    const next = !mirrorRef.current;
+    mirrorRef.current = next;
     try {
-      await source.setMirror(!mirrored);
-      setMirrored(!mirrored);
+      await source.setMirror(next);
+      setMirrored(next);
     } catch (e) {
+      mirrorRef.current = !next;
       setError(message(e));
     }
   }

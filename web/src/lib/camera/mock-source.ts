@@ -1,4 +1,4 @@
-import { photoName } from "../filename";
+import { duplicateName, photoName } from "../filename";
 import type { CameraSource, FileEntry, FrameListener } from "./types";
 
 const SIZE = 240; // matches FRAMESIZE_240X240 on the device
@@ -66,8 +66,7 @@ export class MockSource implements CameraSource {
     const blob = await this.canvas.convertToBlob({ type: "image/jpeg", quality: 0.9 });
     const base = photoName(new Date());
     let name = base;
-    // "_" sorts after "." so same-second duplicates still order newest-first
-    for (let i = 2; sdCard.has(name); i++) name = base.replace(".jpg", `_${i}.jpg`);
+    for (let i = 2; sdCard.has(name); i++) name = duplicateName(base, i);
     sdCard.set(name, blob);
     return { name, size: blob.size };
   }

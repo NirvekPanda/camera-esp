@@ -55,3 +55,11 @@ test("flip button mirrors the preview and persists across reconnects", async ({ 
   await expect(flip).toHaveAttribute("aria-pressed", "false");
   await expect.poll(() => topLeftPixel(page)).toEqual([255, 255, 255]);
 });
+
+test("double-clicking flip toggles twice and stays in sync", async ({ page }) => {
+  await connect(page, "Mock: test pattern");
+  const flip = page.getByRole("button", { name: "Flip horizontally" });
+  await flip.dblclick();
+  await expect(flip).toHaveAttribute("aria-pressed", "false");
+  await expect.poll(() => topLeftPixel(page)).toEqual([255, 255, 255]);
+});
