@@ -81,15 +81,12 @@ bool startCamera(framesize_t size) {
 }
 
 bool initCamera() {
-  // Start with buffers for UXGA (every supported sensor has it); an OV3660 goes up to QXGA, so
-  // restart it with buffers big enough for full-resolution photos.
-  if (!startCamera(FRAMESIZE_UXGA)) return false;
-  if (esp_camera_sensor_get()->id.PID == OV3660_PID) {
-    esp_camera_deinit();
-    if (!startCamera(FRAMESIZE_QXGA)) return false;
-    photo = OV3660_PHOTO;
-  }
+  // One init with buffers for QXGA, the largest photo: the driver clamps it to the sensor's
+  // maximum (UXGA on an OV2640). Never deinit and re-init: on the S3 that hangs in the DMA
+  // teardown ("gdma_disconnect: no peripheral is connected") and the firmware stops responding.
+  if (!startCamera(FRAMESIZE_QXGA)) return false;
   sensor = esp_camera_sensor_get();
+  if (sensor->id.PID == OV3660_PID) photo = OV3660_PHOTO;
   baseVflip = sensor->id.PID == OV3660_PID;  // OV3660 modules are mounted flipped
   sensor->set_vflip(sensor, baseVflip);
   sensor->set_framesize(sensor, FRAMESIZE_240X240);
