@@ -2,10 +2,18 @@
 
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { MockSource } from "@/lib/camera/mock-source";
+import { SerialSource } from "@/lib/camera/serial-source";
+import {
+  DEFAULT_FPS,
+  DEFAULT_RESOLUTION,
+  FALLBACK_RESOLUTION,
+  type Resolution,
+} from "@/lib/camera/settings";
 import type { CameraSource, FileEntry } from "@/lib/camera/types";
 import { newestFirst } from "@/lib/filename";
 
 export const SOURCE_OPTIONS = {
+  usb: { label: "USB camera", create: () => new SerialSource() },
   webcam: { label: "Mock: webcam", create: () => new MockSource("webcam") },
   pattern: { label: "Mock: test pattern", create: () => new MockSource("pattern") },
 } satisfies Record<string, { label: string; create: () => CameraSource }>;
@@ -19,10 +27,18 @@ interface CameraContextValue {
   error: string | null;
   files: FileEntry[];
   mirrored: boolean;
+  vflip: boolean;
+  resolution: Resolution;
+  fps: number;
   connect(id: SourceId): Promise<void>;
   disconnect(): void;
+  release(): Promise<void>; // disconnect and wait until the serial port is free
   capture(): Promise<void>;
+  deleteFile(name: string): Promise<void>;
   toggleMirror(): Promise<void>;
+  toggleVflip(): Promise<void>;
+  changeResolution(resolution: Resolution): Promise<void>;
+  changeFps(fps: number): Promise<void>;
   refreshFiles(): Promise<void>;
 }
 
@@ -30,19 +46,47 @@ const CameraContext = createContext<CameraContextValue | null>(null);
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
+interface Settings {
+  mirrored: boolean;
+  vflip: boolean;
+  resolution: Resolution;
+  fps: number;
+}
+
+const DEFAULT_SETTINGS: Settings = {
+  mirrored: false,
+  vflip: false,
+  resolution: DEFAULT_RESOLUTION,
+  fps: DEFAULT_FPS,
+};
+
+const APPLY: { [K in keyof Settings]: (source: CameraSource, value: Settings[K]) => Promise<void> } = {
+  mirrored: (source, value) => source.setMirror(value),
+  vflip: (source, value) => source.setVflip(value),
+  resolution: (source, value) => source.setResolution(value),
+  fps: (source, value) => source.setFps(value),
+};
+
 export function CameraProvider({ children }: { children: ReactNode }) {
   const [source, setSource] = useState<CameraSource | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [files, setFiles] = useState<FileEntry[]>([]);
-  const [mirrored, setMirrored] = useState(false);
-  // Latest requested value, so rapid clicks toggle from the pending state, not a stale render.
-  const mirrorRef = useRef(false);
+  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+  // Latest requested values. connect() and rapid clicks read these, never a stale render's state.
+  const settingsRef = useRef(DEFAULT_SETTINGS);
 
   // Disconnecting happens here, so replacing the source or unmounting always releases it.
   useEffect(() => {
+    if (!source) return;
+    const unsubscribe = source.onClose((e) => {
+      setSource(null);
+      setFiles([]);
+      setError(`Camera disconnected: ${e.message}`);
+    });
     return () => {
-      void source?.disconnect();
+      unsubscribe();
+      void source.disconnect();
     };
   }, [source]);
 
@@ -52,7 +96,20 @@ export function CameraProvider({ children }: { children: ReactNode }) {
     const next = SOURCE_OPTIONS[id].create();
     try {
       await next.connect();
-      await next.setMirror(mirrorRef.current); // keep the flip setting across reconnects
+      // Read after the await: settings may have changed while connecting (e.g. permission prompt).
+      const { mirrored, vflip, resolution, fps } = settingsRef.current;
+      await next.setMirror(mirrored);
+      await next.setVflip(vflip);
+      try {
+        await next.setResolution(resolution);
+      } catch (e) {
+        // e.g. 1920×1080 chosen before connecting an OV2640: connect at a size every sensor has.
+        await next.setResolution(FALLBACK_RESOLUTION);
+        settingsRef.current = { ...settingsRef.current, resolution: FALLBACK_RESOLUTION };
+        setSettings(settingsRef.current);
+        setError(message(e));
+      }
+      await next.setFps(fps);
       const nextFiles = await next.listFiles();
       // Only publish the source once fully set up, so a failure can't leave a dead "connected" state.
       setSource(next);
@@ -70,6 +127,12 @@ export function CameraProvider({ children }: { children: ReactNode }) {
     setFiles([]);
   }
 
+  async function release() {
+    const current = source;
+    disconnect();
+    await current?.disconnect();
+  }
+
   async function capture() {
     if (!source) return;
     try {
@@ -80,15 +143,27 @@ export function CameraProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  async function toggleMirror() {
+  // Optimistic: shows the new value at once. Without a source it's applied on the next connect.
+  async function updateSetting<K extends keyof Settings>(key: K, value: Settings[K]) {
+    const before = settingsRef.current[key];
+    settingsRef.current = { ...settingsRef.current, [key]: value };
+    setSettings(settingsRef.current);
     if (!source) return;
-    const next = !mirrorRef.current;
-    mirrorRef.current = next;
     try {
-      await source.setMirror(next);
-      setMirrored(next);
+      await APPLY[key](source, value);
     } catch (e) {
-      mirrorRef.current = !next;
+      settingsRef.current = { ...settingsRef.current, [key]: before };
+      setSettings(settingsRef.current);
+      setError(message(e));
+    }
+  }
+
+  async function deleteFile(name: string) {
+    if (!source) return;
+    try {
+      await source.deleteFile(name);
+      setFiles((prev) => prev.filter((f) => f.name !== name));
+    } catch (e) {
       setError(message(e));
     }
   }
@@ -111,11 +186,16 @@ export function CameraProvider({ children }: { children: ReactNode }) {
         status,
         error,
         files,
-        mirrored,
+        ...settings,
         connect,
         disconnect,
+        release,
         capture,
-        toggleMirror,
+        deleteFile,
+        toggleMirror: () => updateSetting("mirrored", !settingsRef.current.mirrored),
+        toggleVflip: () => updateSetting("vflip", !settingsRef.current.vflip),
+        changeResolution: (resolution) => updateSetting("resolution", resolution),
+        changeFps: (fps) => updateSetting("fps", fps),
         refreshFiles,
       }}
     >

@@ -20,14 +20,14 @@ for (const source of ["Mock: test pattern", "Mock: webcam"]) {
   test(`live preview renders frames from ${source}`, async ({ page }) => {
     await connect(page, source);
     await expect.poll(() => canvasBrightness(page)).toBeGreaterThan(0);
-    await expect(page.locator(".stats")).toHaveText(/^[1-9]\d* fps · 240×240$/, { timeout: 5000 });
+    await expect(page.locator(".stats")).toHaveText(/^[1-9]\d* fps actual$/, { timeout: 5000 });
   });
 }
 
 test("disconnect clears the preview and disables the shutter", async ({ page }) => {
   await connect(page, "Mock: test pattern");
   await page.getByRole("button", { name: "Disconnect" }).click();
-  await expect(page.getByText("No camera connected")).toBeVisible();
+  await expect(page.locator(".viewport").getByText("No camera connected")).toBeVisible();
   await expect(page.getByRole("button", { name: "Take picture" })).toBeDisabled();
   expect(await canvasBrightness(page)).toBe(0);
 });

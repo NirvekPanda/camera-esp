@@ -1,3 +1,5 @@
+import type { Resolution } from "./settings";
+
 export interface FileEntry {
   name: string;
   size: number; // bytes
@@ -12,8 +14,16 @@ export interface CameraSource {
   connect(): Promise<void>;
   disconnect(): Promise<void>;
   onFrame(listener: FrameListener): () => void;
+  /** Fires when the camera goes away on its own (e.g. unplugged), never after disconnect(). */
+  onClose(listener: (error: Error) => void): () => void;
   setMirror(mirrored: boolean): Promise<void>; // horizontal flip, applied to preview and photos
-  capture(): Promise<FileEntry>;
+  setVflip(flipped: boolean): Promise<void>; // vertical flip, applied to preview and photos
+  setResolution(resolution: Resolution): Promise<void>; // stream size (photos always use the best)
+  setFps(fps: number): Promise<void>; // target rate; the transport may deliver less
+  capture(): Promise<FileEntry>; // at the camera's best resolution and quality
   listFiles(): Promise<FileEntry[]>;
   getFile(name: string): Promise<Blob>;
+  deleteFile(name: string): Promise<void>; // from the SD card (and its preview)
+  /** A photo center-cropped and scaled to width x height RGB565, as the device UI shows it. */
+  getPixels(name: string, width: number, height: number): Promise<Uint16Array>;
 }

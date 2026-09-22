@@ -36,6 +36,11 @@ describe("newestFirst", () => {
     ]);
   });
 
+  it("puts undated names (saved before the clock was set) after dated ones", () => {
+    const sorted = newestFirst(files("IMG_0001.jpg", "20250101-000000.jpg", "IMG_0002.jpg", "20260101-000000.jpg"));
+    expect(sorted.map((f) => f.name)).toEqual(["20260101-000000.jpg", "20250101-000000.jpg", "IMG_0002.jpg", "IMG_0001.jpg"]);
+  });
+
   it("does not mutate its input", () => {
     const input = files("a", "b");
     newestFirst(input);

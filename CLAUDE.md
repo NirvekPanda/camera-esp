@@ -32,6 +32,15 @@ Before **every** commit to this repo:
 3. If the docs and the code disagree, fix one of them before committing. Never commit code the
    docs contradict.
 
+## User-facing text (site and device UI)
+
+- **No instructions, explanations or commentary anywhere a user can see them.** That includes
+  demo, emulator and test tabs, empty states, aria labels and error messages. Nothing like "This
+  is the device's own UI code…", "Focus it and use the arrow keys", "Take one!" or "(run make
+  flash)".
+- UI text is limited to **labels, values and state** ("No photos", "Camera firmware is out of
+  date"). Explanations belong in `docs/`, and developer hints in code comments.
+
 ## Coding standards
 
 - **Minimal code.** Write the smallest change that does the job. Add no speculative abstractions,
@@ -65,10 +74,51 @@ Before **every** commit to this repo:
 ## Repo root commands
 
 - `make` / `make help`: list targets. Give every new target a `## description` so it shows up there.
-- `make flash [PORT=...]`: build and flash the firmware. `make monitor`: serial monitor.
+- `make flash` / `make upload` `[PORT=...]`: build and flash the firmware over USB. `make hwtest`:
+  protocol-level test of the flashed board (no browser). `make monitor`: serial monitor.
 - `make web` / `make stop` / `make restart`: `./start.sh` deploy, stop and restart of the site on
   nginx at port 8888 (→ `camera.nirvek.xyz` via the Cloudflare tunnel).
 - Run `shellcheck` on `start.sh` and `.githooks/*` after changing them.
+
+## Firmware (`firmware/`)
+
+- PlatformIO + Arduino for the XIAO ESP32-S3 Sense. Keep `CORE_DEBUG_LEVEL=0`: any log text on the
+  USB port corrupts the binary protocol.
+- **The protocol lives in three places, and they must stay in sync:** `web/src/lib/camera/protocol.ts`,
+  `firmware/src/protocol.h` and the test double `web/e2e/fake-serial-device.js`, plus the table in
+  `docs/plan.md`. Every command gets exactly one reply.
+- `web/src/lib/camera/settings.ts` `RESOLUTIONS` must match `FRAME_SIZES` in `main.cpp`.
+- A new camera setting touches: the `CameraSource` interface, both sources, `Settings`/`APPLY` in
+  `camera-context.tsx`, the protocol (three places), `main.cpp`, `hwtest.py` and the docs.
+- Firmware changes must pass `make flash && make hwtest` on the real board before a PR. Say so in
+  the PR if no board was available.
+- Every build exports `web/public/firmware/` (merged image + manifest). Commit the firmware source
+  first, then `make build`, then commit the exported files, so the manifest version is a real
+  commit and not `-dirty`.
+
+## Device UI (`firmware/lib/ui/`)
+
+- **Clean, consistent UI is the first priority**, ahead of features. Follow the design principles
+  in `docs/wii-theme.md` §0:
+  - Every screen has the same nav bar and bottom bar: Back bottom-left, primary action
+    bottom-right, same size and place on every page.
+  - Arrows only move focus. Center/A activate and B goes back everywhere; in the Camera app,
+    Center is the shutter and A toggles the flash. No hidden shortcuts.
+  - One focus outline style.
+  - Labels and state only.
+  New screens use the shared bars. `make uitest` enforces the rules.
+- Portable C++17: no Arduino, no heap, no RTTI or exceptions. The same code runs on the ESP32 and
+  as WASM on the site's Device tab. Design: `docs/wii-theme.md`.
+- **Deterministic:** integer or fixed-point math only (no floats or `sin` in rendering), and
+  `-ffp-contract=off` for both builds. The native tests and the browser test check the same golden
+  hash (`firmware/test_ui/golden.h`).
+- Test first with `make uitest`. If pixels change on purpose, look at `make ui-preview`, then update
+  `EXPECTED_HASH`.
+- After changing UI code, run `make wasm` and commit `web/public/wasm/device-ui.wasm`. `npm test`
+  fails if the `.wasm` doesn't match `golden.h`.
+- Only draw what the ST7789 emulator decodes: the site must show the SPI output, never the
+  framebuffer directly.
+- Wii-*inspired* only: no Nintendo assets, fonts, sounds or names.
 
 ## Git
 

@@ -8,7 +8,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("taking a picture adds a YYYYMMDD-HHMMSS.jpg file", async ({ page }) => {
-  await expect(page.getByText("No photos yet")).toBeVisible();
+  await expect(page.getByText("No photos", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Take picture" }).click();
   await expect(page.getByRole("heading", { name: "Photos (1)" })).toBeVisible();
   await expect(page.locator(".files li .file-name")).toHaveText(/^\d{8}-\d{6}(_\d+)?\.jpg$/);
@@ -25,7 +25,7 @@ test("modal opens the photo, navigates, and closes", async ({ page }) => {
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole("img")).toHaveJSProperty("complete", true);
-  expect(await dialog.getByRole("img").evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(240);
+  expect(await dialog.getByRole("img").evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(1920);
   await expect(dialog.getByRole("button", { name: "Previous photo" })).toBeDisabled();
 
   await page.keyboard.press("ArrowRight");

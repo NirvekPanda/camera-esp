@@ -1,0 +1,1031 @@
+// Native tests for firmware/lib/ui: `make uitest`.
+#include <stdio.h>
+#include <string.h>
+
+#include <vector>
+
+#include "../lib/ui/src/framebuffer.h"
+#include "../lib/ui/src/photos.h"
+#include "../lib/ui/src/st7789.h"
+#include "../lib/ui/src/st7789_emulator.h"
+#include "../lib/ui/src/ui.h"
+#include "../src/jpeg.h"
+#include "fake_library.h"
+#include "golden.h"
+
+using namespace ui;
+
+// --- minimal test harness ---------------------------------------------------------------------
+
+static int failures = 0;
+static int checks = 0;
+
+#define CHECK(cond)                                                    \
+  do {                                                                 \
+    checks++;                                                          \
+    if (!(cond)) {                                                     \
+      failures++;                                                      \
+      printf("  FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond);         \
+    }                                                                  \
+  } while (0)
+
+#define CHECK_EQ(a, b)                                                                  \
+  do {                                                                                  \
+    checks++;                                                                           \
+    long long a_ = (long long)(a), b_ = (long long)(b);                                 \
+    if (a_ != b_) {                                                                     \
+      failures++;                                                                       \
+      printf("  FAIL %s:%d: %s == %s (0x%llx vs 0x%llx)\n", __FILE__, __LINE__, #a, #b, \
+             a_, b_);                                                                   \
+    }                                                                                   \
+  } while (0)
+
+struct TestCase {
+  const char* name;
+  void (*fn)();
+};
+static std::vector<TestCase>& tests() {
+  static std::vector<TestCase> all;
+  return all;
+}
+struct Register {
+  Register(const char* name, void (*fn)()) { tests().push_back({name, fn}); }
+};
+#define TEST(name)                               \
+  static void name();                            \
+  static Register register_##name(#name, name);  \
+  static void name()
+
+// Framebuffers are big; tests share a few instead of putting them on the stack.
+static Framebuffer fb, fb2;
+
+// Records everything sent to the panel.
+struct RecordingBus : SpiBus {
+  std::vector<int> commands;
+  std::vector<uint8_t> bytes;
+  void command(uint8_t c) override { commands.push_back(c); }
+  void data(const uint8_t* b, size_t n) override { bytes.insert(bytes.end(), b, b + n); }
+};
+
+// Delivers data one byte at a time, like a DMA-less SPI loop would.
+struct ByteByByteBus : SpiBus {
+  SpiBus& target;
+  explicit ByteByByteBus(SpiBus& t) : target(t) {}
+  void command(uint8_t c) override { target.command(c); }
+  void data(const uint8_t* b, size_t n) override {
+    for (size_t i = 0; i < n; i++) target.data(b + i, 1);
+  }
+};
+
+static void pattern(Framebuffer& f) {
+  for (int y = 0; y < HEIGHT; y++)
+    for (int x = 0; x < WIDTH; x++) f.pixels[y * WIDTH + x] = uint16_t(x * 131 + y * 977 + (x ^ y));
+}
+
+static bool panelMatches(St7789Emulator& panel, const Framebuffer& f) {
+  for (int y = 0; y < HEIGHT; y++)
+    for (int x = 0; x < WIDTH; x++)
+      if (panel.shown(x, y) != f.at(x, y)) return false;
+  return true;
+}
+
+static bool regionIs(const Framebuffer& f, Rect r, uint16_t c) {
+  for (int y = r.y; y < r.y + r.h; y++)
+    for (int x = r.x; x < r.x + r.w; x++)
+      if (f.at(x, y) != c) return false;
+  return true;
+}
+
+static bool regionHas(const Framebuffer& f, Rect r, uint16_t c) {
+  for (int y = r.y; y < r.y + r.h; y++)
+    for (int x = r.x; x < r.x + r.w; x++)
+      if (f.at(x, y) == c) return true;
+  return false;
+}
+
+static bool sameRegion(const Framebuffer& a, const Framebuffer& b, Rect r) {
+  for (int y = r.y; y < r.y + r.h; y++)
+    for (int x = r.x; x < r.x + r.w; x++)
+      if (a.at(x, y) != b.at(x, y)) return false;
+  return true;
+}
+
+// --- framebuffer ------------------------------------------------------------------------------
+
+TEST(fill_and_rect_clip) {
+  fb.fill(color::bg);
+  CHECK(regionIs(fb, {0, 0, WIDTH, HEIGHT}, color::bg));
+  fb.fillRect({-10, -10, 20, 20}, color::accent);  // partly off-screen
+  CHECK(regionIs(fb, {0, 0, 10, 10}, color::accent));
+  CHECK_EQ(fb.at(10, 10), color::bg);
+  fb.fillRect({230, 230, 50, 50}, color::ink);
+  CHECK(regionIs(fb, {230, 230, 10, 10}, color::ink));
+  fb.fillRect({300, 300, 5, 5}, color::ink);  // fully off-screen: no effect, no crash
+  fb.fillRect({50, 50, -5, 10}, color::ink);  // negative size: no effect
+  CHECK_EQ(fb.at(50, 50), color::bg);
+}
+
+TEST(round_rect_keeps_corners) {
+  fb.fill(color::bg);
+  fb.fillRoundRect({20, 20, 60, 40}, 10, color::tile);
+  CHECK_EQ(fb.at(20, 20), color::bg);  // corners cut
+  CHECK_EQ(fb.at(79, 59), color::bg);
+  CHECK_EQ(fb.at(50, 40), color::tile);  // center
+  CHECK_EQ(fb.at(50, 20), color::tile);  // top edge middle
+  CHECK_EQ(fb.at(20, 40), color::tile);  // left edge middle
+  CHECK_EQ(fb.at(19, 40), color::bg);    // just outside
+}
+
+TEST(round_rect_stroke_leaves_inside) {
+  fb.fill(color::bg);
+  fb.strokeRoundRect({20, 20, 60, 40}, 10, 3, color::accent);
+  CHECK_EQ(fb.at(50, 20), color::accent);
+  CHECK_EQ(fb.at(50, 22), color::accent);
+  CHECK_EQ(fb.at(50, 23), color::bg);  // inside the 3 px border
+  CHECK_EQ(fb.at(50, 40), color::bg);
+  CHECK_EQ(fb.at(20, 20), color::bg);  // corner still cut
+}
+
+TEST(mask_round_rect_rounds_corners_only) {
+  fb.fill(color::accent);
+  fb.maskRoundRect({20, 20, 60, 40}, 10, color::bg);
+  CHECK_EQ(fb.at(20, 20), color::bg);      // corner masked
+  CHECK_EQ(fb.at(50, 40), color::accent);  // inside kept
+  CHECK_EQ(fb.at(10, 10), color::accent);  // outside r untouched
+}
+
+TEST(circle) {
+  fb.fill(color::bg);
+  fb.fillCircle(100, 100, 10, color::ink);
+  CHECK_EQ(fb.at(100, 100), color::ink);
+  CHECK_EQ(fb.at(110, 100), color::ink);
+  CHECK_EQ(fb.at(111, 100), color::bg);
+  CHECK_EQ(fb.at(108, 108), color::bg);  // bounding-box corner is outside the circle
+}
+
+TEST(text) {
+  fb.fill(color::bar);
+  CHECK_EQ(Framebuffer::textWidth(fonts::small, ""), 0);
+  int width = Framebuffer::textWidth(fonts::large, "14:23");
+  CHECK(width > 30 && width < 70);
+  int end = fb.drawText(fonts::large, 10, 2, "14:23", color::text);
+  CHECK_EQ(end, 10 + width);
+  CHECK(regionHas(fb, {10, 2, width, fonts::large.height}, color::text));  // solid glyph pixels
+  CHECK(regionIs(fb, {10 + width + 1, 0, 20, 30}, color::bar));           // nothing past the end
+  fb.drawText(fonts::large, 230, 2, "clipped at the edge", color::text);  // must not crash
+}
+
+// --- ST7789 driver + emulator -----------------------------------------------------------------
+
+TEST(init_sequence) {
+  RecordingBus bus;
+  st7789::init(bus);
+  std::vector<int> expected = {st7789::SWRESET, st7789::SLPOUT, st7789::COLMOD, st7789::MADCTL,
+                               st7789::INVON, st7789::DISPON};
+  CHECK(bus.commands == expected);
+  CHECK(bus.bytes == (std::vector<uint8_t>{st7789::COLMOD_RGB565, 0x00}));  // COLMOD, MADCTL params
+}
+
+TEST(flush_sends_window_then_big_endian_pixels) {
+  fb.fill(0);
+  fb.pixels[5 * WIDTH + 7] = 0x1234;
+  RecordingBus bus;
+  st7789::flush(bus, fb, {7, 5, 1, 1});
+  CHECK(bus.commands == (std::vector<int>{st7789::CASET, st7789::RASET, st7789::RAMWR}));
+  CHECK(bus.bytes == (std::vector<uint8_t>{0, 7, 0, 7, 0, 5, 0, 5, 0x12, 0x34}));
+}
+
+TEST(panel_is_dark_until_initialized) {
+  static St7789Emulator panel;
+  pattern(fb);
+  st7789::flush(panel, fb);
+  CHECK(!panel.displayOn());
+  CHECK_EQ(panel.shown(10, 10), 0);
+}
+
+TEST(full_frame_round_trips) {
+  static St7789Emulator panel;
+  pattern(fb);
+  st7789::init(panel);
+  st7789::flush(panel, fb);
+  CHECK(panel.displayOn());
+  CHECK(panelMatches(panel, fb));
+}
+
+TEST(split_bytes_round_trip) {
+  static St7789Emulator panel;
+  ByteByByteBus bus(panel);
+  pattern(fb);
+  st7789::init(bus);
+  st7789::flush(bus, fb);
+  CHECK(panelMatches(panel, fb));
+}
+
+TEST(partial_window_only_changes_that_window) {
+  static St7789Emulator panel;
+  st7789::init(panel);
+  fb.fill(color::bg);
+  st7789::flush(panel, fb);
+  fb.fillRect({100, 60, 40, 30}, color::accent);
+  st7789::flush(panel, fb, {100, 60, 40, 30});
+  CHECK(panelMatches(panel, fb));
+}
+
+TEST(window_wraps_to_its_start) {
+  static St7789Emulator panel;
+  st7789::init(panel);
+  const uint8_t window[] = {0, 10, 0, 11};  // 2 columns wide, same for rows
+  panel.command(st7789::CASET);
+  panel.data(window, 4);
+  panel.command(st7789::RASET);
+  panel.data(window, 4);
+  panel.command(st7789::RAMWR);
+  const uint8_t pixels[] = {0x11, 0x11, 0x22, 0x22, 0x33, 0x33, 0x44, 0x44, 0x55, 0x55};
+  panel.data(pixels, sizeof pixels);  // 5 pixels into a 2x2 window: the 5th wraps to the start
+  // INVON cancels the panel's native inversion, so shown == written.
+  CHECK_EQ(panel.shown(10, 10), 0x5555);
+  CHECK_EQ(panel.shown(11, 10), 0x2222);
+  CHECK_EQ(panel.shown(10, 11), 0x3333);
+  CHECK_EQ(panel.shown(11, 11), 0x4444);
+}
+
+TEST(missing_invon_shows_inverted_colors) {
+  static St7789Emulator panel;
+  panel.command(st7789::SLPOUT);
+  const uint8_t rgb565 = st7789::COLMOD_RGB565;
+  panel.command(st7789::COLMOD);
+  panel.data(&rgb565, 1);
+  panel.command(st7789::DISPON);
+  fb.fill(color::accent);
+  st7789::flush(panel, fb);
+  CHECK_EQ(panel.shown(0, 0), uint16_t(~color::accent));
+}
+
+TEST(missing_colmod_garbles_pixels) {
+  static St7789Emulator panel;
+  panel.command(st7789::SLPOUT);
+  panel.command(st7789::INVON);
+  panel.command(st7789::DISPON);
+  pattern(fb);
+  st7789::flush(panel, fb);  // 16-bit pixels read as the reset default 18-bit (3 bytes each)
+  CHECK(!panelMatches(panel, fb));
+}
+
+TEST(madctl_mx_mirrors) {
+  static St7789Emulator panel;
+  st7789::init(panel);
+  const uint8_t mx = 0x40;
+  panel.command(st7789::MADCTL);
+  panel.data(&mx, 1);
+  fb.fill(0);
+  fb.pixels[0] = 0xF800;  // top-left
+  st7789::flush(panel, fb);
+  CHECK_EQ(panel.shown(WIDTH - 1, 0), 0xF800);  // appears top-right
+  CHECK_EQ(panel.shown(0, 0), 0);
+}
+
+// --- UI -----------------------------------------------------------------------------------------
+
+TEST(ease_out) {
+  CHECK_EQ(easeOut(0, 200), 0);
+  CHECK_EQ(easeOut(200, 200), 1024);
+  CHECK_EQ(easeOut(500, 200), 1024);
+  CHECK(easeOut(100, 200) > 512);  // front-loaded
+  int last = -1;
+  for (uint32_t t = 0; t <= 200; t += 10) {
+    CHECK(easeOut(t, 200) >= last);
+    last = easeOut(t, 200);
+  }
+}
+
+TEST(home_focus_moves_and_clamps) {
+  Ui ui;
+  CHECK(ui.screen() == Screen::Home);
+  CHECK_EQ(ui.focus(), 0);
+  ui.press(Button::Left);  // already at the first tile
+  CHECK_EQ(ui.focus(), 0);
+  ui.press(Button::Right);
+  CHECK_EQ(ui.focus(), 1);
+  CHECK(ui.animating());
+  ui.tick(FOCUS_MS);
+  CHECK(!ui.animating());
+  ui.press(Button::Right);
+  ui.press(Button::Right);  // past the last tile
+  CHECK_EQ(ui.focus(), PAGE_COUNT - 1);
+}
+
+TEST(home_row_slides_between_frames) {
+  Ui ui;
+  ui.tick(FOCUS_MS);
+  ui.render(fb);
+  ui.press(Button::Right);
+  ui.tick(FOCUS_MS / 2);
+  ui.render(fb2);
+  CHECK(!sameRegion(fb, fb2, {0, 40, WIDTH, 150}));  // mid-animation frame differs from the start
+  ui.tick(FOCUS_MS);
+  ui.render(fb);
+  CHECK(!sameRegion(fb, fb2, {0, 40, WIDTH, 150}));  // and from the end
+}
+
+TEST(huge_tick_saturates_instead_of_restarting_animations) {
+  Ui ui;
+  ui.press(Button::Right);
+  ui.tick(FOCUS_MS);
+  ui.tick(0xFFFFFFFDu);  // e.g. a negative step cast to unsigned: must not wrap timers backwards
+  CHECK(!ui.animating());
+}
+
+static FakeLibrary demoPhotos(5);
+
+// Opens home tile `page` (0 Camera, 1 Pictures, 2 Settings) from a fresh UI with 5 photos.
+static void openPage(Ui& ui, int page) {
+  ui.setLibrary(&demoPhotos);
+  for (int i = 0; i < page; i++) ui.press(Button::Right);
+  ui.press(Button::Center);
+  ui.tick(OPEN_MS);
+}
+
+// Moves focus to the Back button (bottom-left on every page) and presses it.
+static void goBack(Ui& ui) {
+  for (int i = 0; i < 12 && ui.focus() != BACK; i++) ui.press(Button::Down);
+  ui.press(Button::Left);  // from the primary action (bottom-right) to Back
+  CHECK_EQ(ui.focus(), BACK);
+  ui.press(Button::Center);
+}
+
+TEST(center_opens_page_after_zoom) {
+  Ui ui;
+  ui.press(Button::Center);
+  CHECK(ui.screen() == Screen::Home);  // still zooming
+  ui.tick(OPEN_MS);
+  CHECK(ui.screen() == Screen::Camera);
+}
+
+TEST(camera_center_shoots_a_toggles_flash_b_goes_back) {
+  Ui ui;
+  openPage(ui, 0);
+  ui.press(Button::Center);  // the shutter: the host saves the photo
+  CHECK_EQ(ui.takeCaptureRequests(), 1);
+  CHECK_EQ(ui.takeCaptureRequests(), 0);
+  CHECK(ui.animating());  // shutter blink
+  ui.tick(FLASH_MS);
+  CHECK(!ui.flashOn());
+  ui.press(Button::A);
+  CHECK(ui.flashOn());
+  ui.press(Button::A);
+  CHECK(!ui.flashOn());
+  CHECK(ui.screen() == Screen::Camera);  // neither leaves the camera
+  ui.press(Button::B);                    // Back, as everywhere else
+  CHECK(ui.screen() == Screen::Home);
+  CHECK_EQ(ui.focus(), 0);  // back on the Camera tile
+}
+
+TEST(camera_shows_the_live_preview_when_one_is_set) {
+  Ui ui;
+  openPage(ui, 0);
+  static uint16_t frame[PREVIEW_W * PREVIEW_H];
+  for (int i = 0; i < PREVIEW_W * PREVIEW_H; i++) frame[i] = uint16_t(0x1234 + i % 97);
+  ui.setPreview(frame);
+  ui.render(fb);
+  bool exact = true;
+  for (int y = 0; y < PREVIEW_H; y++)
+    for (int x = 0; x < PREVIEW_W; x++) exact &= fb.at(x, PREVIEW_Y + y) == frame[y * PREVIEW_W + x];
+  CHECK(exact);                            // the frame, pixel for pixel, under the nav bar
+  CHECK_EQ(fb.at(120, 27), color::line);  // nav bar unchanged
+  ui.setPreview(nullptr);
+  ui.render(fb);
+  CHECK_EQ(fb.at(5, 60), color::white);  // back to the color bars (no camera)
+}
+
+TEST(leaving_the_camera_drops_the_preview) {
+  Ui ui;
+  openPage(ui, 0);
+  static uint16_t frame[PREVIEW_W * PREVIEW_H];
+  for (auto& p : frame) p = 0x07e0;
+  ui.setPreview(frame);
+  ui.press(Button::B);  // home
+  ui.press(Button::Center);
+  ui.tick(OPEN_MS);
+  ui.render(fb);
+  CHECK_EQ(fb.at(5, 60), color::white);  // color bars until a fresh frame arrives, not a stale one
+}
+
+TEST(mirror_and_flip_apply_to_the_live_preview) {
+  Ui ui;
+  static uint16_t frame[PREVIEW_W * PREVIEW_H];
+  for (int i = 0; i < PREVIEW_W * PREVIEW_H; i++) frame[i] = uint16_t(i % 7919);
+  openPage(ui, 2);  // Settings: Mirror and Flip vertical on
+  ui.press(Button::Down);
+  ui.press(Button::Center);
+  ui.press(Button::Down);
+  ui.press(Button::Center);
+  ui.press(Button::B);
+  ui.press(Button::Left);
+  ui.press(Button::Left);
+  ui.press(Button::Center);
+  ui.tick(OPEN_MS);
+  ui.setPreview(frame);
+  ui.render(fb);
+  CHECK_EQ(fb.at(0, PREVIEW_Y), frame[PREVIEW_W * PREVIEW_H - 1]);  // top-left shows the bottom-right
+  CHECK_EQ(fb.at(PREVIEW_W - 1, HEIGHT - 1), frame[0]);
+}
+
+TEST(jpeg_size_reads_the_sof_header) {
+  // SOI, an APP0 segment to skip, then a baseline SOF0 for 2048x1536.
+  const uint8_t jpeg[] = {0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x04, 0x00, 0x00, 0xFF, 0xC0, 0x00, 0x11,
+                          0x08, 0x06, 0x00, 0x08, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00};
+  uint16_t w = 0, h = 0;
+  CHECK(jpegSize(jpeg, sizeof jpeg, w, h));
+  CHECK_EQ(w, 2048);
+  CHECK_EQ(h, 1536);
+  const uint8_t progressive[] = {0xFF, 0xD8, 0xFF, 0xC2, 0x00, 0x11, 0x08, 0x00, 0xF0, 0x00, 0xF0, 0, 0, 0};
+  CHECK(jpegSize(progressive, sizeof progressive, w, h));
+  CHECK_EQ(w, 240);
+  CHECK_EQ(h, 240);
+  const uint8_t notJpeg[] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B};
+  CHECK(!jpegSize(notJpeg, sizeof notJpeg, w, h));
+  CHECK(!jpegSize(jpeg, 8, w, h));  // truncated before the SOF
+}
+
+TEST(parse_photo_time) {
+  int y, mo, d, min;
+  CHECK(parsePhotoTime("20260621-094107.jpg", y, mo, d, min));
+  CHECK_EQ(y, 2026);
+  CHECK_EQ(mo, 6);
+  CHECK_EQ(d, 21);
+  CHECK_EQ(min, 9 * 60 + 41);
+  CHECK(parsePhotoTime("20260621-094107_02.jpg", y, mo, d, min));  // same-second duplicate
+  CHECK(!parsePhotoTime("IMG_0001.jpg", y, mo, d, min));
+  CHECK(!parsePhotoTime("20261321-094107.jpg", y, mo, d, min));  // month 13
+  CHECK(!parsePhotoTime("2026", y, mo, d, min));
+}
+
+TEST(newest_first_puts_dated_photos_before_undated_ones) {
+  CHECK(newerPhoto("20260921-142305_02.jpg", "20260921-142305.jpg"));  // same-second duplicate
+  CHECK(newerPhoto("20260101-000000.jpg", "20250615-120000.jpg"));
+  CHECK(newerPhoto("20250615-120000.jpg", "IMG_0009.jpg"));  // undated (clock not synced) last
+  CHECK(newerPhoto("IMG_0002.jpg", "IMG_0001.jpg"));
+  CHECK(!newerPhoto("IMG_0009.jpg", "20250615-120000.jpg"));
+}
+
+TEST(keep_newest_keeps_the_newest_whatever_the_folder_order) {
+  char names[3][PHOTO_NAME_MAX];
+  uint32_t sizes[3];
+  int count = 0;
+  const char* folder[] = {"20260105-000000.jpg", "IMG_0001.jpg", "20260101-000000.jpg", "20260110-000000.jpg",
+                          "20260102-000000.jpg", "20260120-000000.jpg"};
+  for (uint32_t i = 0; i < 6; i++) keepNewest(names, sizes, count, 3, folder[i], 100 + i);
+  CHECK_EQ(count, 3);
+  CHECK(strcmp(names[0], "20260120-000000.jpg") == 0);
+  CHECK(strcmp(names[1], "20260110-000000.jpg") == 0);
+  CHECK(strcmp(names[2], "20260105-000000.jpg") == 0);
+  CHECK_EQ(sizes[0], 105u);  // sizes stay with their names
+  CHECK_EQ(sizes[2], 100u);
+}
+
+TEST(scale_cover_crops_and_scales) {
+  // 8x4 source: left half 0x1111, right half 0x2222. Cover-scaled to 2x2 keeps the middle 4x4.
+  uint16_t src[8 * 4], dst[2 * 2];
+  for (int y = 0; y < 4; y++)
+    for (int x = 0; x < 8; x++) src[y * 8 + x] = x < 4 ? 0x1111 : 0x2222;
+  scaleCover(src, 8, 4, dst, 2, 2);
+  CHECK_EQ(dst[0], 0x1111);
+  CHECK_EQ(dst[1], 0x2222);
+  CHECK_EQ(dst[2], 0x1111);
+  CHECK_EQ(dst[3], 0x2222);
+  uint16_t same[8 * 4];
+  scaleCover(src, 8, 4, same, 8, 4);  // same size: identical
+  CHECK(memcmp(same, src, sizeof src) == 0);
+}
+
+TEST(photo_date_format) {
+  char out[32];
+  photoDate(out, 2026, 6, 21, 1000);
+  CHECK(strcmp(out, "June, 21, 2026") == 0);
+  photoDate(out, 2026, 9, 3, 1000);
+  CHECK(strcmp(out, "September, 3, 2026") == 0);
+  photoDate(out, 2026, 9, 3, 80);  // not enough room for the full month
+  CHECK(strcmp(out, "Sep, 3, 2026") == 0);
+  photoDate(out, 2026, 9, 28, 67);  // 12-hour clock + "100%" battery: drop the year too
+  CHECK(strcmp(out, "Sep, 28") == 0);
+}
+
+TEST(viewer_nav_shows_when_the_photo_was_taken) {
+  FakeLibrary photos(2);
+  snprintf(photos.names[0], PHOTO_NAME_MAX, "20260621-094107.jpg");
+  snprintf(photos.names[1], PHOTO_NAME_MAX, "IMG_0001.jpg");
+  Ui ui, clockAt941;
+  ui.setTime(13 * 60);  // now: 13:00
+  openPage(ui, 1);
+  ui.setLibrary(&photos);
+  ui.press(Button::Center);  // view the dated photo
+  ui.render(fb);
+  clockAt941.setTime(9 * 60 + 41);
+  clockAt941.render(fb2);
+  const Rect clock = {0, 0, 64, 27};
+  CHECK(sameRegion(fb, fb2, clock));                   // the photo's time, not the current 13:00
+  CHECK(regionHas(fb, {70, 0, 120, 27}, color::ink));  // "- June, 21, 2026"
+  ui.press(Button::Right);                             // undated name: current time + the name
+  ui.render(fb2);
+  CHECK(!sameRegion(fb, fb2, clock));
+  CHECK(regionHas(fb2, {70, 0, 120, 27}, color::ink));
+}
+
+TEST(camera_title_is_an_icon_not_a_label) {
+  Ui camera, settings;
+  openPage(camera, 0);
+  openPage(settings, 2);
+  camera.render(fb);
+  CHECK(regionHas(fb, {60, 0, 40, 27}, color::ink));   // the icon after the clock
+  CHECK(!regionHas(fb, {100, 0, 80, 27}, color::ink)); // no "Camera" text beyond it
+  settings.render(fb2);
+  CHECK(regionHas(fb2, {100, 0, 40, 27}, color::ink)); // other pages keep their text title
+}
+
+TEST(camera_shows_only_picture_and_nav_bar) {
+  Ui ui;
+  openPage(ui, 0);
+  ui.render(fb);
+  CHECK(!regionHas(fb, {0, 206, WIDTH, HEIGHT - 206}, color::bar));  // no bottom bar
+  CHECK(!regionHas(fb, {0, 206, WIDTH, HEIGHT - 206}, color::tile)); // no buttons
+  CHECK_EQ(fb.at(120, 27), color::line);  // nav bar still there
+}
+
+TEST(camera_grid_overlay) {
+  Ui ui;
+  openPage(ui, 0);
+  ui.render(fb);
+  CHECK(fb.at(WIDTH / 3, 60) != color::white);  // yellow bar, no grid
+  ui.press(Button::B);                          // home, then Settings -> Grid
+  ui.press(Button::Right);
+  ui.press(Button::Right);
+  ui.press(Button::Center);
+  ui.tick(OPEN_MS);
+  for (int i = 0; i < 3; i++) ui.press(Button::Down);
+  ui.press(Button::Center);
+  CHECK(ui.grid());
+  ui.press(Button::B);  // B = Back outside the camera
+  ui.press(Button::Left);
+  ui.press(Button::Left);
+  ui.press(Button::Center);
+  ui.tick(OPEN_MS);
+  ui.render(fb);
+  CHECK_EQ(fb.at(WIDTH / 3, 60), color::white);  // rule-of-thirds line
+}
+
+TEST(a_is_ok_and_b_is_back_outside_the_camera) {
+  Ui ui;
+  ui.setLibrary(&demoPhotos);
+  ui.press(Button::Right);
+  ui.press(Button::A);  // opens the focused tile, like Center
+  ui.tick(OPEN_MS);
+  CHECK(ui.screen() == Screen::Pictures);
+  ui.press(Button::A);  // opens the focused photo
+  CHECK(ui.screen() == Screen::Viewer);
+  ui.press(Button::B);  // the viewer has no Back button: B is the way back
+  CHECK(ui.screen() == Screen::Pictures);
+  ui.press(Button::B);
+  CHECK(ui.screen() == Screen::Home);
+  ui.press(Button::B);  // nothing above Home
+  CHECK(ui.screen() == Screen::Home);
+}
+
+TEST(twelve_hour_clock) {
+  Ui a, b;
+  const Rect clock = {0, 0, 110, 27};
+  a.setTime(14 * 60 + 23);
+  b.setTime(14 * 60 + 23);
+  openPage(b, 2);
+  for (int i = 0; i < 4; i++) b.press(Button::Down);  // Clock row
+  b.press(Button::Center);
+  CHECK(b.clock12());
+  b.press(Button::B);
+  a.render(fb);
+  b.render(fb2);
+  CHECK(!sameRegion(fb, fb2, clock));  // "14:23" vs "2:23 PM"
+  b.setTime(0 * 60 + 5);
+  b.render(fb);
+  b.setTime(12 * 60 + 5);
+  b.render(fb2);
+  CHECK(!sameRegion(fb, fb2, clock));  // 12:05 AM vs 12:05 PM
+}
+
+TEST(flash_is_only_active_inside_the_camera) {
+  Ui ui;
+  openPage(ui, 0);
+  ui.press(Button::A);
+  CHECK(ui.flashOn());
+  ui.press(Button::B);  // home: the ring around the display must go dark
+  CHECK(!ui.flashOn());
+  ui.press(Button::Center);
+  ui.tick(OPEN_MS);
+  CHECK(ui.flashOn());  // the setting is remembered when the camera reopens
+}
+
+TEST(flash_icon_sits_with_the_status_icons) {
+  Ui ui;
+  openPage(ui, 0);
+  ui.setLink(Link::Usb);
+  ui.render(fb);
+  ui.press(Button::A);
+  ui.render(fb2);
+  const Rect status = {WIDTH / 2, 0, WIDTH / 2, 27}, left = {0, 0, WIDTH / 2, 27};
+  CHECK(regionHas(fb2, status, color::accent));  // top-right, beside the USB icon
+  CHECK(sameRegion(fb, fb2, left));              // clock and title untouched
+}
+
+// The flash is a light ring outside the panel (the emulator draws it around the display):
+// on the panel it only shows the nav bar icon, and the picture is untouched.
+TEST(flash_does_not_draw_on_the_picture) {
+  Ui ui;
+  openPage(ui, 0);
+  ui.render(fb);
+  ui.press(Button::A);
+  ui.render(fb2);
+  CHECK(sameRegion(fb, fb2, {0, 28, WIDTH, HEIGHT - 28}));
+}
+
+TEST(arrows_never_change_settings_or_leave_pages) {
+  Ui ui;
+  openPage(ui, 0);
+  ui.press(Button::A);  // flash on; arrows mustn't change it either
+  bool flash = ui.flashOn();
+  bool mirrored = ui.mirrored();
+  int resolution = ui.resolution();
+  for (Button b : {Button::Up, Button::Up, Button::Left, Button::Right, Button::Down}) ui.press(b);
+  CHECK(ui.screen() == Screen::Camera);  // no hidden "Up = home" shortcut
+  CHECK_EQ(ui.mirrored(), mirrored);    // no hidden "Left/Right = flip" shortcut
+  CHECK_EQ(ui.resolution(), resolution);
+  CHECK_EQ(ui.flashOn(), flash);
+}
+
+TEST(pictures_grid_bottom_bar_and_viewer) {
+  Ui ui;
+  openPage(ui, 1);
+  CHECK(ui.screen() == Screen::Pictures);
+  CHECK_EQ(ui.focus(), 0);
+  ui.press(Button::Up);  // top row: stays, no shortcut home
+  CHECK(ui.screen() == Screen::Pictures);
+  ui.press(Button::Right);
+  CHECK_EQ(ui.focus(), 1);
+  ui.press(Button::Down);  // 3 per row
+  CHECK_EQ(ui.focus(), 4);
+  ui.press(Button::Down);  // nothing below: the bottom bar
+  CHECK_EQ(ui.focus(), BACK);
+  ui.press(Button::Up);  // back into the grid
+  CHECK_EQ(ui.focus(), 4);
+  ui.press(Button::Center);  // Center activates the focused photo
+  CHECK(ui.screen() == Screen::Viewer);
+  CHECK_EQ(ui.focus(), 4);  // the photo being viewed
+  ui.press(Button::Center);  // the photo is already open: nothing to activate
+  CHECK(ui.screen() == Screen::Viewer);
+  ui.press(Button::B);
+  CHECK(ui.screen() == Screen::Pictures);
+  CHECK_EQ(ui.focus(), 4);  // same photo still focused
+  goBack(ui);
+  CHECK(ui.screen() == Screen::Home);
+}
+
+TEST(settings_center_changes_value) {
+  Ui ui;
+  openPage(ui, 2);
+  CHECK(ui.screen() == Screen::Settings);
+  CHECK_EQ(ui.focus(), 0);
+  CHECK_EQ(ui.resolution(), 1);  // 480x480, the default
+  for (int i = 1; i < RESOLUTION_COUNT; i++) ui.press(Button::Center);  // cycles forward...
+  CHECK_EQ(ui.resolution(), 0);                                         // ...and wraps
+  ui.press(Button::Down);
+  ui.press(Button::Center);
+  CHECK(ui.mirrored());
+  ui.press(Button::Down);
+  ui.press(Button::Center);
+  CHECK(ui.vflipped());
+  ui.press(Button::Down);
+  ui.press(Button::Center);
+  CHECK(ui.grid());
+  ui.press(Button::Down);
+  ui.press(Button::Center);
+  CHECK(ui.clock12());
+  ui.press(Button::Down);  // About: nothing to change
+  ui.press(Button::Center);
+  ui.press(Button::Down);  // past the last row: the bottom bar
+  CHECK_EQ(ui.focus(), BACK);
+  ui.press(Button::Up);
+  CHECK_EQ(ui.focus(), SETTING_COUNT - 1);
+  goBack(ui);
+  CHECK(ui.screen() == Screen::Home);
+}
+
+TEST(pictures_reopens_on_last_viewed_photo) {
+  Ui ui;
+  openPage(ui, 1);
+  ui.press(Button::Right);
+  ui.press(Button::Down);  // photo index 4
+  goBack(ui);              // via the bottom bar
+  CHECK(ui.screen() == Screen::Home);
+  ui.press(Button::Center);
+  ui.tick(OPEN_MS);
+  CHECK_EQ(ui.focus(), 4);
+}
+
+TEST(down_enters_a_partly_filled_row_before_the_bottom_bar) {
+  Ui ui;  // 5 photos: row 0 = 0 1 2, row 1 = 3 4
+  openPage(ui, 1);
+  ui.press(Button::Right);
+  ui.press(Button::Right);  // index 2, top-right
+  ui.press(Button::Down);   // nothing directly below: the row's last photo, not Back
+  CHECK_EQ(ui.focus(), 4);
+  ui.press(Button::Down);
+  CHECK_EQ(ui.focus(), BACK);
+  ui.press(Button::Up);  // back to where focus left the grid
+  CHECK_EQ(ui.focus(), 4);
+}
+
+TEST(every_shutter_press_requests_a_photo) {
+  Ui ui;
+  openPage(ui, 0);
+  ui.press(Button::Center);
+  ui.tick(FLASH_MS);
+  ui.press(Button::Center);
+  CHECK_EQ(ui.takeCaptureRequests(), 2);  // the host saves both
+}
+
+TEST(pictures_show_the_librarys_thumbnails) {
+  Ui ui;
+  openPage(ui, 1);
+  ui.render(fb);
+  // Thumbnail 1 (top middle): its white stripe on the left, its color on the right.
+  const int x = 12 + 74, y = 38;
+  CHECK_EQ(fb.at(x + 8, y + 32), 0xFFFF);
+  CHECK_EQ(fb.at(x + 40, y + 32), FakeLibrary::COLORS[1]);
+  CHECK_EQ(fb.at(x, y), color::bg);  // rounded corner
+}
+
+TEST(pictures_show_placeholders_while_loading) {
+  FakeLibrary loading(3);
+  loading.ready = false;
+  Ui ui;
+  openPage(ui, 1);
+  ui.setLibrary(&loading);
+  ui.render(fb);
+  CHECK_EQ(fb.at(12 + 74 + 40, 38 + 32), color::tile);
+}
+
+TEST(pictures_open_on_a_valid_photo_or_back) {
+  FakeLibrary none(0), photos(5);
+  Ui ui;
+  openPage(ui, 1);
+  ui.setLibrary(&none);
+  ui.press(Button::B);
+  ui.press(Button::Center);  // reopen Pictures with an empty card
+  ui.tick(OPEN_MS);
+  CHECK_EQ(ui.focus(), BACK);
+  ui.press(Button::Center);  // Back, not a blank viewer
+  CHECK(ui.screen() == Screen::Home);
+
+  Ui shrink;
+  openPage(shrink, 1);
+  shrink.setLibrary(&photos);
+  for (int i = 0; i < 2; i++) shrink.press(Button::Right), shrink.press(Button::Down);  // photo 4
+  shrink.press(Button::B);
+  photos.n = 2;  // photos deleted while away
+  shrink.libraryChanged();
+  shrink.press(Button::Center);
+  shrink.tick(OPEN_MS);
+  CHECK(shrink.focus() >= 0 && shrink.focus() < 2);
+}
+
+TEST(focus_follows_the_photo_when_the_library_changes) {
+  FakeLibrary photos(3);
+  Ui ui;
+  openPage(ui, 1);
+  ui.setLibrary(&photos);
+  ui.press(Button::Right);  // photos.names[1]
+  ui.press(Button::Center);  // viewer on it
+  char viewed[PHOTO_NAME_MAX];
+  snprintf(viewed, sizeof viewed, "%s", photos.names[1]);
+  // A new photo is saved: it's inserted first and everything shifts down one.
+  for (int i = 3; i > 0; i--) snprintf(photos.names[i], PHOTO_NAME_MAX, "%s", photos.names[i - 1]);
+  snprintf(photos.names[0], PHOTO_NAME_MAX, "20260622-080000.jpg");
+  photos.n = 4;
+  ui.libraryChanged();
+  CHECK(ui.screen() == Screen::Viewer);
+  CHECK(strcmp(photos.names[ui.focus()], viewed) == 0);  // still the same photo
+}
+
+TEST(pictures_empty_card) {
+  FakeLibrary none(0);
+  Ui ui;
+  openPage(ui, 1);
+  ui.setLibrary(&none);
+  ui.render(fb);
+  CHECK(regionHas(fb, {0, 90, WIDTH, 30}, color::text));  // "No photos"
+  ui.press(Button::Down);
+  ui.press(Button::Center);  // Back still works
+  CHECK(ui.screen() == Screen::Home);
+}
+
+TEST(viewer_draws_the_photo_and_follows_card_changes) {
+  FakeLibrary photos(5);
+  Ui ui;
+  openPage(ui, 1);
+  ui.setLibrary(&photos);
+  for (int i = 0; i < 4; i++) ui.press(Button::Right), ui.press(Button::Down);  // last photo (index 4)
+  ui.press(Button::Up);
+  ui.press(Button::Center);
+  CHECK(ui.screen() == Screen::Viewer);
+  ui.render(fb);
+  CHECK_EQ(fb.at(10, 100), 0xFFFF);                   // the photo's stripe, full width
+  CHECK_EQ(fb.at(200, 200), FakeLibrary::COLORS[ui.focus() % 5]);
+  photos.n = 2;  // photos deleted from the card meanwhile
+  ui.press(Button::B);
+  ui.press(Button::Up);
+  CHECK(ui.focus() < 2);  // focus stays on a photo that exists
+}
+
+TEST(back_button_is_identical_on_every_page) {
+  const Rect back = {0, 206, WIDTH / 2, HEIGHT - 206};
+  Ui pictures, settings;
+  openPage(pictures, 1);  // a photo focused: Back unfocused
+  openPage(settings, 2);  // a row focused: Back unfocused
+  pictures.render(fb);
+  settings.render(fb2);
+  CHECK(sameRegion(fb, fb2, back));
+  CHECK(!regionHas(fb, back, color::accent));
+  pictures.press(Button::Down);
+  pictures.press(Button::Down);  // below the grid: Back focused
+  pictures.render(fb);
+  CHECK(regionHas(fb, back, color::accent));  // focused: the same blue outline as tiles
+}
+
+TEST(viewer_has_back_and_delete_and_arrows_step_through_photos) {
+  Ui ui;
+  openPage(ui, 1);
+  ui.press(Button::Right);
+  ui.press(Button::A);
+  CHECK(ui.screen() == Screen::Viewer);
+  CHECK_EQ(ui.focus(), 1);  // the photo is focused
+  ui.render(fb);
+  CHECK_EQ(fb.at(120, 205), color::line);  // bottom bar divider: the bar is back
+  CHECK(regionHas(fb, {0, 206, WIDTH / 2, HEIGHT - 206}, color::tile));      // Back
+  CHECK(regionHas(fb, {WIDTH / 2, 206, WIDTH / 2, HEIGHT - 206}, color::tile));  // Delete
+  ui.press(Button::Right);  // photo focused: arrows step through photos
+  CHECK_EQ(ui.focus(), 2);
+  ui.render(fb2);
+  CHECK(!sameRegion(fb, fb2, {0, 28, WIDTH, 177}));  // a different photo
+  for (int i = 0; i < 10; i++) ui.press(Button::Right);
+  CHECK_EQ(ui.focus(), ui.photoCount() - 1);  // stops at the last photo
+  for (int i = 0; i < 10; i++) ui.press(Button::Left);
+  CHECK_EQ(ui.focus(), 0);  // and at the first
+  for (int i = 0; i < 10; i++) ui.press(Button::Right);
+  ui.press(Button::Down);  // into the bottom bar: Back
+  CHECK_EQ(ui.focus(), BACK);
+  ui.press(Button::Right);  // Delete, right of Back
+  CHECK_EQ(ui.focus(), PRIMARY);
+  ui.press(Button::Up);  // back to the photo
+  CHECK_EQ(ui.focus(), ui.photoCount() - 1);
+  ui.press(Button::Down);
+  ui.press(Button::Center);  // Back
+  CHECK(ui.screen() == Screen::Pictures);
+}
+
+TEST(delete_turns_into_a_red_confirm_and_a_second_press_deletes) {
+  Ui ui;
+  openPage(ui, 1);
+  ui.press(Button::Center);  // view photo 0
+  ui.press(Button::Down);
+  ui.press(Button::Right);
+  ui.render(fb);  // (194, 214): inside the Delete button
+  CHECK_EQ(fb.at(194, 214), color::tile);
+  ui.press(Button::Center);  // Delete: arms Confirm
+  char name[PHOTO_NAME_MAX];
+  CHECK(!ui.takeDeleteRequest(name));
+  CHECK(ui.confirmingDelete());
+  CHECK_EQ(ui.focus(), PRIMARY);  // still on the same button
+  ui.render(fb);
+  CHECK_EQ(fb.at(194, 214), color::danger);
+  ui.press(Button::Right);  // still on it: stays armed
+  CHECK(ui.confirmingDelete());
+  ui.press(Button::Left);  // moving away disarms
+  CHECK(!ui.confirmingDelete());
+  ui.press(Button::Right);
+  ui.press(Button::Center);
+  ui.press(Button::B);  // B goes back, as everywhere, and disarms
+  CHECK(!ui.confirmingDelete());
+  CHECK(ui.screen() == Screen::Pictures);
+  CHECK(!ui.takeDeleteRequest(name));
+  ui.press(Button::Center);  // view it again
+  ui.press(Button::Down);
+  ui.press(Button::Right);
+  ui.press(Button::Center);  // Delete, Confirm
+  ui.press(Button::Center);
+  CHECK(!ui.confirmingDelete());
+  CHECK(ui.takeDeleteRequest(name));
+  CHECK(strcmp(name, demoPhotos.names[0]) == 0);
+  CHECK(!ui.takeDeleteRequest(name));  // once
+  CHECK(ui.screen() == Screen::Viewer);  // stays until the host updates the library
+}
+
+TEST(viewer_moves_on_after_its_photo_is_deleted) {
+  FakeLibrary photos(3);
+  Ui ui;
+  openPage(ui, 1);
+  ui.setLibrary(&photos);
+  ui.press(Button::Right);
+  ui.press(Button::Center);  // view photo 1
+  snprintf(photos.names[1], PHOTO_NAME_MAX, "%s", photos.names[2]);  // photo 1 deleted: the rest shift up
+  photos.n = 2;
+  ui.libraryChanged();
+  CHECK(ui.screen() == Screen::Viewer);
+  CHECK(ui.focus() >= 0 && ui.focus() < 2);  // on a photo that exists
+  photos.n = 0;
+  ui.libraryChanged();
+  CHECK(ui.screen() == Screen::Pictures);  // nothing left to view
+}
+
+TEST(an_armed_confirm_never_carries_over_to_another_photo) {
+  FakeLibrary photos(3);
+  Ui ui;
+  openPage(ui, 1);
+  ui.setLibrary(&photos);
+  ui.press(Button::Center);  // view photo 0
+  ui.press(Button::Down);
+  ui.press(Button::Right);
+  ui.press(Button::Center);  // armed on photo 0
+  CHECK(ui.confirmingDelete());
+  ui.libraryChanged();  // same photos (the host refreshed the list): still armed
+  CHECK(ui.confirmingDelete());
+  snprintf(photos.names[0], PHOTO_NAME_MAX, "%s", photos.names[1]);  // photo 0 removed elsewhere
+  snprintf(photos.names[1], PHOTO_NAME_MAX, "%s", photos.names[2]);
+  photos.n = 2;
+  ui.libraryChanged();
+  CHECK(!ui.confirmingDelete());
+  ui.press(Button::Center);  // Delete again, not Confirm
+  char name[PHOTO_NAME_MAX];
+  CHECK(!ui.takeDeleteRequest(name));
+}
+
+TEST(settings_icon_is_a_gear) {
+  Ui ui;
+  ui.press(Button::Right);
+  ui.press(Button::Right);
+  ui.tick(FOCUS_MS);  // Settings tile centered at (120, 104)
+  ui.render(fb);
+  const int cx = 120, cy = 104;
+  CHECK_EQ(fb.at(cx, cy), color::tile);            // center hole
+  CHECK_EQ(fb.at(cx + 6, cy), color::ink);         // body
+  CHECK_EQ(fb.at(cx, cy - 11), color::ink);        // tooth, up
+  CHECK_EQ(fb.at(cx + 8, cy - 8), color::ink);     // tooth, up-right
+  CHECK_EQ(fb.at(cx + 4, cy - 11), color::tile);   // gap between teeth
+  CHECK_EQ(fb.at(cx + 11, cy + 4), color::tile);   // gap between teeth
+}
+
+TEST(no_hint_text_on_home) {
+  Ui ui;
+  ui.tick(FOCUS_MS);
+  ui.render(fb);
+  CHECK(!regionHas(fb, {0, 206, WIDTH, HEIGHT - 206}, color::text));  // bottom bar: page dots only
+}
+
+TEST(nav_bar_time_and_link_icon) {
+  Ui ui;
+  const Rect clock = {0, 0, 80, 28}, icon = {180, 0, 60, 27};
+  ui.setTime(14 * 60 + 23);
+  ui.render(fb);
+  CHECK_EQ(fb.at(120, 27), color::line);  // divider under the bar
+  CHECK(regionHas(fb, clock, color::text));
+  CHECK(regionIs(fb, icon, color::bar));  // no link: empty corner
+  ui.setTime(9 * 60 + 5);
+  ui.render(fb2);
+  CHECK(!sameRegion(fb, fb2, clock));
+
+  ui.setLink(Link::Usb);
+  ui.render(fb);
+  CHECK(regionHas(fb, icon, color::ink));
+  ui.setLink(Link::Battery, 80);
+  ui.render(fb2);
+  CHECK(!sameRegion(fb, fb2, icon));  // battery looks different from USB
+}
+
+TEST(focused_home_tile_has_accent_outline) {
+  Ui ui;
+  ui.tick(FOCUS_MS);
+  ui.render(fb);
+  CHECK(regionHas(fb, {80, 40, 80, 120}, color::accent));  // focused tile is centered
+}
+
+TEST(golden_session_hash) {
+  uint32_t hash = golden::run();
+  if (golden::EXPECTED_HASH == 0) printf("  golden hash: 0x%08x (pin it in golden.h)\n", hash);
+  CHECK_EQ(hash, golden::EXPECTED_HASH);
+}
+
+int main() {
+  for (const TestCase& t : tests()) {
+    int before = failures;
+    t.fn();
+    printf("%s %s\n", failures == before ? "ok  " : "FAIL", t.name);
+  }
+  printf("\n%d checks, %d failed\n", checks, failures);
+  return failures ? 1 : 0;
+}

@@ -48,6 +48,20 @@ select,
   cursor: pointer;
 }
 
+/* Custom chevron: the native one sits against the right border. Gradients follow the theme color. */
+select {
+  appearance: none;
+  padding-right: 32px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 17px) 50%,
+    calc(100% - 12px) 50%;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+}
+
 button:disabled,
 select:disabled {
   opacity: 0.5;
@@ -59,10 +73,13 @@ select:disabled {
   outline-offset: 2px;
 }
 
+/* Centered column: displays sit in the middle of the page (dragWidth accounts for it). */
 main {
-  width: min(480px, 100% - 32px);
+  width: min(1280px, 100% - 32px);
   margin: 24px auto;
-  display: grid;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   gap: 24px;
 }
 
@@ -123,7 +140,7 @@ main {
 .viewport {
   position: relative;
   width: 100%;
-  aspect-ratio: 1;
+  aspect-ratio: 1; /* overridden inline with the stream resolution */
   background: #000;
   border-radius: var(--radius);
   overflow: hidden;
@@ -160,10 +177,18 @@ main {
   }
 }
 
-.shutter {
+/* Shutter, then horizontal and vertical flip, stacked in the top-right corner. */
+.viewer-controls {
   position: absolute;
   top: 12px;
   right: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.shutter {
   width: 48px;
   height: 48px;
   padding: 0;
@@ -178,8 +203,21 @@ main {
   transform: scale(0.9);
 }
 
-.stats {
+.stream-settings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
   margin-top: 8px;
+}
+
+.stream-settings select {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.8rem;
+}
+
+.stats {
+  margin-left: auto;
   font-family: var(--font-geist-mono), monospace;
   font-size: 0.8rem;
   color: var(--muted);
@@ -190,6 +228,10 @@ main {
 }
 
 /* File list */
+.files {
+  width: min(720px, 100%);
+}
+
 .files-head {
   display: flex;
   align-items: center;
@@ -293,11 +335,8 @@ main {
 }
 
 .flip {
-  position: absolute;
-  top: 72px;
-  right: 16px;
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   padding: 0;
   border-radius: 50%;
   border: 2px solid #fff;
@@ -310,4 +349,171 @@ main {
 .flip[aria-pressed="true"] {
   background: #fff;
   color: #000;
+}
+
+.resize-handle {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  color: #fff;
+  background: rgb(0 0 0 / 0.45);
+  cursor: nwse-resize;
+  touch-action: none; /* pointer events instead of page scrolling while dragging */
+  opacity: 0.7;
+  transition: opacity 120ms;
+}
+
+.resize-handle:hover,
+.resize-handle:focus-visible {
+  opacity: 1;
+}
+
+.resize-handle svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Page tabs */
+.bar h1 {
+  margin-right: auto;
+}
+
+.tabs {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.tabs a {
+  padding: 4px 14px;
+  border-radius: 6px;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.tabs a[aria-current="page"] {
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.1);
+}
+
+/* Device emulator */
+.device {
+  width: 100%; /* so the screen's min(480px, 100%) sizes against the page, not itself */
+}
+
+.device-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+
+/* NES-style controller body: one large rectangle holding the d-pad and A/B (Wii-style buttons). */
+.device-controls {
+  display: flex;
+  align-items: center;
+  gap: 36px;
+  padding: 18px 28px;
+  border-radius: 14px;
+  background: #c9cbcf;
+  box-shadow: inset 0 0 0 1px #a9acb1, 0 2px 0 #a9acb1;
+}
+
+.face-buttons {
+  display: grid;
+  grid-template: repeat(2, 52px) / repeat(2, 52px);
+  gap: 4px;
+}
+
+.face-buttons button {
+  border-radius: 50%;
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+.face-a { grid-area: 1 / 2; } /* A upper right, B lower left, as on Nintendo controllers */
+.face-b { grid-area: 2 / 1; }
+
+/* Device body around the display. Its padding is the flash ring: 20 panel px (40 CSS px at 2x),
+   dark bezel when off, white when the flash is on. Always there, so nothing shifts. */
+.device-frame {
+  --ring: 40px;
+  padding: var(--ring);
+  border-radius: 24px;
+  background: #1d1f22;
+  transition: background 80ms;
+}
+
+.device-frame[data-flash="on"] {
+  background: #fff;
+  box-shadow: 0 0 0 1px var(--border); /* keeps the white ring visible on a light page */
+}
+
+.device-screen {
+  display: block;
+  width: min(480px, 100vw - 32px - 2 * var(--ring)); /* 2x, pixel-exact */
+  aspect-ratio: 1;
+  image-rendering: pixelated;
+  background: #000;
+}
+
+/* Dark wells in the body, like the NES controller's black face. */
+.dpad,
+.face-buttons {
+  padding: 10px;
+  border-radius: 10px;
+  background: #2b2d31;
+}
+
+.dpad {
+  display: grid;
+  grid-template: repeat(3, 44px) / repeat(3, 44px);
+  gap: 4px;
+}
+
+/* Wii-style buttons: glossy white, soft gray rim, gray glyphs (like the Wii Remote). */
+.dpad button,
+.face-buttons button {
+  padding: 0;
+  color: #8a9099;
+  border: 1px solid #c9ccd1;
+  background: linear-gradient(#ffffff, #eceef1);
+  box-shadow: 0 2px 0 #b9bdc3, inset 0 1px 0 #ffffff;
+}
+
+.dpad button {
+  border-radius: 10px;
+  font-size: 1rem;
+}
+
+.dpad button:active,
+.face-buttons button:active {
+  transform: translateY(1px);
+  box-shadow: 0 1px 0 #b9bdc3, inset 0 1px 0 #ffffff;
+}
+
+.dpad-up { grid-area: 1 / 2; }
+.dpad-left { grid-area: 2 / 1; }
+.dpad-center { grid-area: 2 / 2; border-radius: 50%; }
+.dpad-right { grid-area: 2 / 3; }
+.dpad-down { grid-area: 3 / 2; }
+
+/* Inline in the header row: long results truncate (full text in the tooltip), never wrap. */
+.firmware-result {
+  max-width: 24ch;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 0.85rem;
+  color: var(--muted);
 }
