@@ -151,16 +151,19 @@ void Ui::pressPage(Button b) {
       return;
     case Screen::Pictures:
       if (photoFocus_ == BACK) {
-        if (b == Button::Up && photos_ > 0) photoFocus_ = photos_ - 1;
+        if (b == Button::Up && photos_ > 0) photoFocus_ = lastPhoto_;
       } else if (b == Button::Left && photoFocus_ % COLS > 0) {
         photoFocus_--;
       } else if (b == Button::Right && photoFocus_ % COLS < COLS - 1 && photoFocus_ + 1 < photos_) {
         photoFocus_++;
       } else if (b == Button::Down) {
-        photoFocus_ = photoFocus_ + COLS < photos_ ? photoFocus_ + COLS : BACK;
+        // Into the next row (its last photo if it's shorter), and only past the last row to Back.
+        bool lastRow = photoFocus_ / COLS == (photos_ - 1) / COLS;
+        photoFocus_ = lastRow ? BACK : (photoFocus_ + COLS < photos_ ? photoFocus_ + COLS : photos_ - 1);
       } else if (b == Button::Up && photoFocus_ >= COLS) {
         photoFocus_ -= COLS;
       }
+      if (photoFocus_ != BACK) lastPhoto_ = photoFocus_;
       return;
     case Screen::Settings:
       if (b == Button::Down) settingFocus_ = settingFocus_ == BACK || settingFocus_ == SETTING_COUNT - 1 ? BACK : settingFocus_ + 1;
@@ -178,9 +181,11 @@ void Ui::activate() {
     return;
   }
   switch (screen_) {
-    case Screen::Camera:  // PRIMARY: Shoot
-      if (photos_ < MAX_PHOTOS) photos_++;
-      flashT_ = 0;
+    case Screen::Camera:  // PRIMARY: Shoot. The flash only confirms a photo that was actually saved.
+      if (photos_ < MAX_PHOTOS) {
+        photos_++;
+        flashT_ = 0;
+      }
       return;
     case Screen::Pictures:
       screen_ = Screen::Viewer;
@@ -200,7 +205,7 @@ void Ui::open(Screen page) {
   screen_ = page;
   if (page == Screen::Camera) cameraFocus_ = PRIMARY;
   if (page == Screen::Settings) settingFocus_ = 0;
-  if (page == Screen::Pictures && photoFocus_ == BACK) photoFocus_ = 0;
+  if (page == Screen::Pictures) photoFocus_ = lastPhoto_;
 }
 
 void Ui::tick(uint32_t ms) {

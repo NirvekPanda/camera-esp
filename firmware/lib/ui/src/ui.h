@@ -74,6 +74,7 @@ class Ui {
   uint32_t flashT_ = FLASH_MS;
   int cameraFocus_ = PRIMARY;
   int photos_ = 5, photoFocus_ = 0;  // stays on the viewed photo while the viewer is open
+  int lastPhoto_ = 0;  // where focus left the grid: reopening Pictures and Up from Back return here
   int settingFocus_ = 0, resolution_ = RESOLUTION_COUNT - 1;  // 1920x1080, the site's default
   bool mirrored_ = false, vflipped_ = false;
 };

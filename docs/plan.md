@@ -152,8 +152,8 @@ Binary packets, so JPEGs need no base64:
   arrive between replies. So `SerialSource` matches each reply to the oldest pending command.
 - **A missing reply means a broken link.** If a command times out (5 s, 30 s for `GET_FILE`) or a
   write fails, later replies can no longer be matched safely. So the site disconnects with an
-  error ("Camera stopped responding…", or "…Is the camera firmware flashed?" if the very first
-  command gets no answer).
+  error: "Camera stopped responding", or "No camera firmware detected" if the very first command
+  gets no answer.
 - The firmware stops streaming when a USB write comes back short (the host stopped reading). Every
   connect sends `STREAM 1` again.
 - Both parsers (`protocol.ts`, `firmware/src/protocol.h`) scan for `A5 5A` and resync after noise or
@@ -272,8 +272,9 @@ firmware/
   JPEG buffer is about 384 KB, and measured FHD frames are about 61 KB. Allocating for FHD instead
   could fail init on an OV2640.
 - **Out-of-date firmware** answers new commands with `ERROR "Unknown command 0x.."`. The site
-  turns that into "Camera firmware is out of date… Reflash it: make flash". OV3660 modules get `vflip` because they're mounted upside down relative
-  to the OV2640.
+  shows "Camera firmware is out of date". Per `CLAUDE.md`, errors state the problem and never
+  give instructions. OV3660 modules get `vflip` because they're mounted upside down relative to
+  the OV2640.
 - **Loop:** handle any received commands, then send a `FRAME` whenever streaming and the fps
   interval has passed. Streaming starts only when the site sends `STREAM 1`, so an idle port gets no
   binary data.

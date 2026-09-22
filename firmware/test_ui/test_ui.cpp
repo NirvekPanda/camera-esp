@@ -434,6 +434,40 @@ TEST(settings_center_changes_value) {
   CHECK(ui.screen() == Screen::Home);
 }
 
+TEST(pictures_reopens_on_last_viewed_photo) {
+  Ui ui;
+  openPage(ui, 1);
+  ui.press(Button::Right);
+  ui.press(Button::Down);  // photo index 4
+  goBack(ui);              // via the bottom bar
+  CHECK(ui.screen() == Screen::Home);
+  ui.press(Button::Center);
+  ui.tick(OPEN_MS);
+  CHECK_EQ(ui.focus(), 4);
+}
+
+TEST(down_enters_a_partly_filled_row_before_the_bottom_bar) {
+  Ui ui;  // 5 photos: row 0 = 0 1 2, row 1 = 3 4
+  openPage(ui, 1);
+  ui.press(Button::Right);
+  ui.press(Button::Right);  // index 2, top-right
+  ui.press(Button::Down);   // nothing directly below: the row's last photo, not Back
+  CHECK_EQ(ui.focus(), 4);
+  ui.press(Button::Down);
+  CHECK_EQ(ui.focus(), BACK);
+  ui.press(Button::Up);  // back to where focus left the grid
+  CHECK_EQ(ui.focus(), 4);
+}
+
+TEST(no_flash_when_no_photo_is_taken) {
+  Ui ui;
+  openPage(ui, 0);
+  while (ui.photoCount() < MAX_PHOTOS) ui.press(Button::Center), ui.tick(FLASH_MS);
+  ui.press(Button::Center);  // storage full: nothing saved
+  CHECK_EQ(ui.photoCount(), MAX_PHOTOS);
+  CHECK(!ui.animating());  // so no shutter flash either
+}
+
 // The Back button is the same pixels in the same place on every page.
 TEST(back_button_is_identical_on_every_page) {
   const Rect back = {0, 206, WIDTH / 2, HEIGHT - 206};
