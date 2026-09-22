@@ -83,6 +83,9 @@ vendors (`0x303A`, `0x2886`).
   plain code-unit order (`newestFirst` in `lib/filename.ts`), not `localeCompare`: locale collation
   puts `_` before `.` and would list the original above its newer duplicates. Firmware must use the
   same naming.
+- **Newest first** (`ui::newerPhoto` on the device, `newestFirst` on the site, which must agree):
+  dated `YYYYMMDD-HHMMSS` names by time, then undated `IMG_0001.jpg` names (saved before the
+  clock was set).
 - **Time:** the ESP has no RTC. On connect the site sends `SET_TIME` with *local wall-clock* seconds
   (Unix time + the browser's UTC offset), and the firmware formats it as if it were UTC. That way
   photo names are in local time without timezone support on the device. Photos taken before a sync
@@ -292,7 +295,8 @@ firmware/
   binary data.
 - **Photo library (`firmware/src/sd_photo_library.*`):** `SdPhotoLibrary` implements the device UI's
   `PhotoLibrary` on the microSD card:
-  - Lists `/photos` newest first, using the shared `sortNewestFirst`.
+  - Scans all of `/photos` and keeps the newest 128 (`keepNewest`): the card's folder order is
+    arbitrary, and cutting off before sorting would drop the newest.
   - Decodes JPEGs with the camera library's `jpg2rgb565`, using its built-in 1/2, 1/4 or 1/8 scale
     that best covers the target, then `scaleCover` for the exact size.
   - Caches the last 8 decoded images in PSRAM (a screen of thumbnails plus the viewer image).

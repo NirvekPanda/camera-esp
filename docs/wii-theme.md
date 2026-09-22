@@ -104,6 +104,8 @@ The Wii's pointer and big TV don't fit here. What changes:
     (`PHOTO_PIXELS`); with a mock, the browser decodes them.
   - The Camera app's shutter asks the host to save a photo (`takeCaptureRequests`), and the new
     photo appears once it's on the card.
+  - The UI remembers the focused photo by name: after the library changes (`libraryChanged()`,
+    e.g. a new photo inserted first), focus and the open viewer stay on the same photo.
 
   The Pictures grid (which keeps its Back button) opens a photo with Center/A in a **full-screen
   viewer**: just the photo and the nav bar, which shows **when the photo was taken**, its time

@@ -114,43 +114,64 @@ export function DeviceScreen() {
 
   // The device's Pictures page shows the connected camera's photos (its SD card): names from the
   // camera's file list, thumbnails and the viewer image decoded to the device's sizes.
+  const namesRef = useRef<string[]>([]);
+
+  // Per camera: shutter presses and the viewer image. Kept out of the effect above so a file list
+  // update (after every capture) doesn't drop presses or restart loads.
   useEffect(() => {
     thumbCache.current.clear(); // a different camera
-  }, [source]);
-
-  useEffect(() => {
     if (!ui) return;
-    const names = source ? files.map((f) => f.name).slice(0, MAX_PHOTOS) : [];
-    ui.setPhotos(names);
     ui.takeCaptureRequests(); // presses from before this camera was connected don't count
     if (!source) return;
     let cancelled = false;
-    let loadingImage = -1;
-    const report = (e: unknown) => !cancelled && setError(e instanceof Error ? e.message : String(e));
-    void (async () => {
-      for (const [i, name] of names.entries()) {
-        const pixels = thumbCache.current.get(name) ?? (await source.getPixels(name, THUMB_SIZE, THUMB_SIZE));
-        if (cancelled) return;
-        thumbCache.current.set(name, pixels);
-        ui.setThumbnail(i, pixels);
-      }
-    })().catch(report);
+    let loading: string | null = null;
+    let failed: string | null = null; // don't retry an unreadable photo until another is viewed
     const poll = setInterval(() => {
       // Shutter presses save photos through the camera connection; its file list then updates.
       for (let n = ui.takeCaptureRequests(); n > 0; n--) void captureRef.current();
       const wanted = ui.wantedImage();
-      if (wanted >= 0 && wanted !== loadingImage && names[wanted]) {
-        loadingImage = wanted;
-        source
-          .getPixels(names[wanted], PREVIEW_W, PREVIEW_H)
-          .then((pixels) => !cancelled && ui.setImage(wanted, pixels))
-          .catch(report)
-          .finally(() => (loadingImage = -1));
-      }
+      const name = namesRef.current[wanted];
+      if (!name || name === loading || name === failed) return;
+      loading = name;
+      source
+        .getPixels(name, PREVIEW_W, PREVIEW_H)
+        .then((pixels) => {
+          if (!cancelled && namesRef.current[wanted] === name) ui.setImage(wanted, pixels);
+        })
+        .catch((e: unknown) => {
+          failed = name;
+          if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+        })
+        .finally(() => (loading = null));
     }, 100);
     return () => {
       cancelled = true;
       clearInterval(poll);
+    };
+  }, [ui, source]);
+
+  useEffect(() => {
+    if (!ui) return;
+    const names = source ? files.map((f) => f.name).slice(0, MAX_PHOTOS) : [];
+    namesRef.current = names;
+    ui.setPhotos(names);
+    if (!source) return;
+    let cancelled = false;
+    void (async () => {
+      for (const [i, name] of names.entries()) {
+        try {
+          const pixels = thumbCache.current.get(name) ?? (await source.getPixels(name, THUMB_SIZE, THUMB_SIZE));
+          if (cancelled) return;
+          thumbCache.current.set(name, pixels);
+          ui.setThumbnail(i, pixels);
+        } catch (e) {
+          if (cancelled) return;
+          setError(e instanceof Error ? e.message : String(e)); // this one stays a tile; keep going
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
     };
   }, [ui, source, files]);
 

@@ -224,6 +224,26 @@ test.describe("Pictures page with the camera's SD card", () => {
     expect(await regionHas(page, [70, 0, 120, 27], INK)).toBe(true); // "- <Month>, <day>, <year>"
   });
 
+  test("an unreadable photo isn't re-requested in a loop", async ({ page }) => {
+    await page.getByRole("button", { name: "Connect" }).click();
+    await page.getByRole("button", { name: "Take picture" }).click();
+    await expect(page.getByRole("heading", { name: "Photos (1)" })).toBeVisible();
+    await page.evaluate(() => {
+      (window as unknown as { fakeCamera: { failPixels: boolean } }).fakeCamera.failPixels = true;
+    });
+    await openDeviceTab(page);
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("Enter"); // Pictures (the thumbnail fails: a tile)
+    await expect.poll(() => onPictures(page)).toBe(true); // opened (input is ignored while zooming)
+    await page.keyboard.press("Enter"); // viewer (the image fails)
+    await expect.poll(() => onPictures(page)).toBe(false);
+    await page.waitForTimeout(1500);
+    const requests = await page.evaluate(
+      () => (window as unknown as { fakeCamera: { commands: number[] } }).fakeCamera.commands.filter((c) => c === 0x8a).length,
+    );
+    expect(requests).toBeLessThanOrEqual(2); // the thumbnail and the image, once each
+  });
+
   test("the emulated shutter saves a photo on the board", async ({ page }) => {
     await page.getByRole("button", { name: "Connect" }).click();
     await expect(page.getByRole("status")).toHaveText("connected");

@@ -12,11 +12,15 @@ export const duplicateName = (name: string, n: number) =>
   name.replace(".jpg", `_${String(n).padStart(2, "0")}.jpg`);
 
 /**
- * Newest first. Plain code-unit order, not localeCompare: ICU collation sorts "_" before ".",
- * which would put 142305_02.jpg ahead of its original.
+ * Newest first, like the camera's LIST (ui::newerPhoto): dated YYYYMMDD-HHMMSS names by time, then
+ * undated ones (IMG_0001.jpg). Plain code-unit order, not localeCompare: ICU collation sorts "_"
+ * before ".", which would put 142305_02.jpg ahead of its original.
  */
 export const newestFirst = <T extends { name: string }>(files: T[]) =>
-  [...files].sort((a, b) => (a.name < b.name ? 1 : a.name > b.name ? -1 : 0));
+  [...files].sort((a, b) => {
+    const dated = Number(parsePhotoDate(b.name) !== null) - Number(parsePhotoDate(a.name) !== null);
+    return dated || (a.name < b.name ? 1 : a.name > b.name ? -1 : 0);
+  });
 
 const PHOTO_DATE = /^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})/;
 

@@ -31,12 +31,27 @@ bool parsePhotoTime(const char* name, int& year, int& month, int& day, int& minu
   return true;
 }
 
-void sortNewestFirst(char (*names)[PHOTO_NAME_MAX], int count) {
-  for (int i = 1; i < count; i++)  // insertion sort: a few hundred names at most, no heap
-    for (int j = i; j > 0 && compare(names[j - 1], names[j]) < 0; j--) {
-      char tmp[PHOTO_NAME_MAX];
-      for (int k = 0; k < PHOTO_NAME_MAX; k++) tmp[k] = names[j][k], names[j][k] = names[j - 1][k], names[j - 1][k] = tmp[k];
-    }
+bool newerPhoto(const char* a, const char* b) {
+  int y, mo, d, min;
+  const bool aDated = parsePhotoTime(a, y, mo, d, min), bDated = parsePhotoTime(b, y, mo, d, min);
+  if (aDated != bDated) return aDated;
+  return compare(a, b) > 0;
+}
+
+void keepNewest(char (*names)[PHOTO_NAME_MAX], uint32_t* sizes, int& count, int max, const char* name,
+                uint32_t size) {
+  int at = count;  // insertion point in the newest-first list
+  while (at > 0 && newerPhoto(name, names[at - 1])) at--;
+  if (at >= max) return;  // older than everything kept
+  if (count < max) count++;
+  for (int i = count - 1; i > at; i--) {
+    for (int k = 0; k < PHOTO_NAME_MAX; k++) names[i][k] = names[i - 1][k];
+    sizes[i] = sizes[i - 1];
+  }
+  int k = 0;
+  for (; k < PHOTO_NAME_MAX - 1 && name[k]; k++) names[at][k] = name[k];
+  names[at][k] = 0;
+  sizes[at] = size;
 }
 
 void scaleCover(const uint16_t* src, int sw, int sh, uint16_t* dst, int dw, int dh) {

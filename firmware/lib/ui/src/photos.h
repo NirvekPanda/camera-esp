@@ -23,9 +23,14 @@ class PhotoLibrary {
 // When a photo was taken, from its YYYYMMDD-HHMMSS name. False for other names (IMG_0001.jpg).
 bool parsePhotoTime(const char* name, int& year, int& month, int& day, int& minutes);
 
-// Sorts file names newest first: plain byte order, reversed (YYYYMMDD-HHMMSS sorts by time, and
-// "_02" duplicates sort after their original).
-void sortNewestFirst(char (*names)[PHOTO_NAME_MAX], int count);
+// Newest-first order: dated YYYYMMDD-HHMMSS names by time (a "_02" duplicate after its original),
+// then undated names (IMG_0001.jpg, saved before the clock was set), highest number first.
+bool newerPhoto(const char* a, const char* b);
+
+// Adds name (with its size) to a newest-first list of at most max entries, dropping the oldest
+// when full, so scanning a folder in any order keeps the newest photos.
+void keepNewest(char (*names)[PHOTO_NAME_MAX], uint32_t* sizes, int& count, int max, const char* name,
+                uint32_t size);
 
 // Center-crops src (sw x sh RGB565) to the aspect of dst and scales it to dw x dh (nearest).
 void scaleCover(const uint16_t* src, int sw, int sh, uint16_t* dst, int dw, int dh);

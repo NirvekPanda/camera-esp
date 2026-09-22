@@ -89,6 +89,7 @@ EMSCRIPTEN_KEEPALIVE void ui_library_set_count(int count) {
   library.n = count < HostLibrary::MAX ? count : HostLibrary::MAX;
   memset(library.thumbReady, 0, sizeof library.thumbReady);
   library.imageIndex = library.wantedImage = -1;
+  device.libraryChanged();
 }
 EMSCRIPTEN_KEEPALIVE uint16_t* ui_library_thumb(int index) { return library.thumbs[index]; }
 EMSCRIPTEN_KEEPALIVE void ui_library_thumb_ready(int index) { library.thumbReady[index] = true; }

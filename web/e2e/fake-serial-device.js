@@ -18,6 +18,7 @@
     dropNextReply: false, // true = lose the next reply, like bytes dropped on the USB link
     oldFirmware: false, // true = firmware from before VFLIP existed
     connectDelayMs: 0, // a slow port (e.g. while the permission prompt is open)
+    failPixels: false, // true = PHOTO_PIXELS can't decode (e.g. a corrupt file)
     streaming: false,
     sensor: "OV3660", // or "OV2640"
     mirrored: false,
@@ -131,7 +132,7 @@
         const w = view.getUint16(0, true), h = view.getUint16(2, true);
         const name = new TextDecoder().decode(payload.slice(4));
         const data = camera.files.get(name);
-        if (!data) return sendText(T.ERROR, `Couldn't read ${name}`);
+        if (!data || camera.failPixels) return sendText(T.ERROR, `Couldn't read ${name}`);
         const bitmap = await createImageBitmap(new Blob([data], { type: "image/jpeg" }));
         const scale = Math.min(bitmap.width / w, bitmap.height / h);
         const ctx = new OffscreenCanvas(w, h).getContext("2d");

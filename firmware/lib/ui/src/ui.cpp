@@ -210,6 +210,7 @@ void Ui::pressPage(Button b) {
         photoFocus_ -= COLS;
       }
       if (photoFocus_ != BACK) lastPhoto_ = photoFocus_;
+      rememberPhoto();
       return;
     }
     case Screen::Settings:
@@ -220,6 +221,7 @@ void Ui::pressPage(Button b) {
       if (b == Button::Left && photoFocus_ > 0) photoFocus_--;
       if (b == Button::Right && photoFocus_ < photoCount() - 1) photoFocus_++;
       lastPhoto_ = photoFocus_;
+      rememberPhoto();
       return;
   }
 }
@@ -227,6 +229,7 @@ void Ui::pressPage(Button b) {
 // Center/A activate whatever is focused, on every page.
 void Ui::activate() {
   if (screen_ == Screen::Viewer) return;  // the focused photo is already open
+  if (screen_ == Screen::Pictures) clampPhotoFocus();  // the card may have changed
   if (focus() == BACK) return back();
   switch (screen_) {
     case Screen::Pictures:
@@ -248,7 +251,44 @@ void Ui::activate() {
 void Ui::open(Screen page) {
   screen_ = page;
   if (page == Screen::Settings) settingFocus_ = 0;
-  if (page == Screen::Pictures) photoFocus_ = lastPhoto_;
+  if (page == Screen::Pictures) {
+    photoFocus_ = lastPhoto_;
+    clampPhotoFocus();
+  }
+}
+
+// Keeps focus on a photo that exists, or Back when there are none.
+void Ui::clampPhotoFocus() {
+  const int photos = photoCount();
+  if (photos == 0) photoFocus_ = BACK;
+  else if (photoFocus_ >= photos) photoFocus_ = photos - 1;
+  else if (photoFocus_ == BACK && screen_ == Screen::Viewer) photoFocus_ = 0;
+  if (photoFocus_ != BACK) lastPhoto_ = photoFocus_;
+  rememberPhoto();
+}
+
+void Ui::rememberPhoto() {
+  if (photoFocus_ == BACK || photoFocus_ >= photoCount()) return;
+  const char* name = library_->name(photoFocus_);
+  int k = 0;
+  for (; k < PHOTO_NAME_MAX - 1 && name[k]; k++) focusedPhoto_[k] = name[k];
+  focusedPhoto_[k] = 0;
+}
+
+void Ui::libraryChanged() {
+  const int photos = photoCount();
+  for (int i = 0; i < photos && focusedPhoto_[0]; i++) {
+    const char* name = library_->name(i);
+    int k = 0;
+    while (name[k] && name[k] == focusedPhoto_[k]) k++;
+    if (name[k] == focusedPhoto_[k]) {  // same photo, maybe at a new position
+      if (photoFocus_ != BACK) photoFocus_ = i;
+      lastPhoto_ = i;
+      return;
+    }
+  }
+  if (screen_ == Screen::Viewer && photos == 0) screen_ = Screen::Pictures;  // the photo is gone
+  clampPhotoFocus();
 }
 
 void Ui::tick(uint32_t ms) {

@@ -460,14 +460,27 @@ TEST(parse_photo_time) {
   CHECK(!parsePhotoTime("2026", y, mo, d, min));
 }
 
-TEST(sort_newest_first) {
-  char names[4][PHOTO_NAME_MAX] = {"20260101-000000.jpg", "20260921-142305.jpg", "20260921-142305_02.jpg",
-                                   "20250615-120000.jpg"};
-  sortNewestFirst(names, 4);
-  CHECK(strcmp(names[0], "20260921-142305_02.jpg") == 0);
-  CHECK(strcmp(names[1], "20260921-142305.jpg") == 0);
-  CHECK(strcmp(names[2], "20260101-000000.jpg") == 0);
-  CHECK(strcmp(names[3], "20250615-120000.jpg") == 0);
+TEST(newest_first_puts_dated_photos_before_undated_ones) {
+  CHECK(newerPhoto("20260921-142305_02.jpg", "20260921-142305.jpg"));  // same-second duplicate
+  CHECK(newerPhoto("20260101-000000.jpg", "20250615-120000.jpg"));
+  CHECK(newerPhoto("20250615-120000.jpg", "IMG_0009.jpg"));  // undated (clock not synced) last
+  CHECK(newerPhoto("IMG_0002.jpg", "IMG_0001.jpg"));
+  CHECK(!newerPhoto("IMG_0009.jpg", "20250615-120000.jpg"));
+}
+
+TEST(keep_newest_keeps_the_newest_whatever_the_folder_order) {
+  char names[3][PHOTO_NAME_MAX];
+  uint32_t sizes[3];
+  int count = 0;
+  const char* folder[] = {"20260105-000000.jpg", "IMG_0001.jpg", "20260101-000000.jpg", "20260110-000000.jpg",
+                          "20260102-000000.jpg", "20260120-000000.jpg"};
+  for (uint32_t i = 0; i < 6; i++) keepNewest(names, sizes, count, 3, folder[i], 100 + i);
+  CHECK_EQ(count, 3);
+  CHECK(strcmp(names[0], "20260120-000000.jpg") == 0);
+  CHECK(strcmp(names[1], "20260110-000000.jpg") == 0);
+  CHECK(strcmp(names[2], "20260105-000000.jpg") == 0);
+  CHECK_EQ(sizes[0], 105u);  // sizes stay with their names
+  CHECK_EQ(sizes[2], 100u);
 }
 
 TEST(scale_cover_crops_and_scales) {
@@ -562,6 +575,7 @@ TEST(camera_grid_overlay) {
 
 TEST(a_is_ok_and_b_is_back_outside_the_camera) {
   Ui ui;
+  ui.setLibrary(&demoPhotos);
   ui.press(Button::Right);
   ui.press(Button::A);  // opens the focused tile, like Center
   ui.tick(OPEN_MS);
@@ -755,6 +769,48 @@ TEST(pictures_show_placeholders_while_loading) {
   ui.setLibrary(&loading);
   ui.render(fb);
   CHECK_EQ(fb.at(12 + 74 + 40, 38 + 32), color::tile);
+}
+
+TEST(pictures_open_on_a_valid_photo_or_back) {
+  FakeLibrary none(0), photos(5);
+  Ui ui;
+  openPage(ui, 1);
+  ui.setLibrary(&none);
+  ui.press(Button::B);
+  ui.press(Button::Center);  // reopen Pictures with an empty card
+  ui.tick(OPEN_MS);
+  CHECK_EQ(ui.focus(), BACK);
+  ui.press(Button::Center);  // Back, not a blank viewer
+  CHECK(ui.screen() == Screen::Home);
+
+  Ui shrink;
+  openPage(shrink, 1);
+  shrink.setLibrary(&photos);
+  for (int i = 0; i < 2; i++) shrink.press(Button::Right), shrink.press(Button::Down);  // photo 4
+  shrink.press(Button::B);
+  photos.n = 2;  // photos deleted while away
+  shrink.libraryChanged();
+  shrink.press(Button::Center);
+  shrink.tick(OPEN_MS);
+  CHECK(shrink.focus() >= 0 && shrink.focus() < 2);
+}
+
+TEST(focus_follows_the_photo_when_the_library_changes) {
+  FakeLibrary photos(3);
+  Ui ui;
+  openPage(ui, 1);
+  ui.setLibrary(&photos);
+  ui.press(Button::Right);  // photos.names[1]
+  ui.press(Button::Center);  // viewer on it
+  char viewed[PHOTO_NAME_MAX];
+  snprintf(viewed, sizeof viewed, "%s", photos.names[1]);
+  // A new photo is saved: it's inserted first and everything shifts down one.
+  for (int i = 3; i > 0; i--) snprintf(photos.names[i], PHOTO_NAME_MAX, "%s", photos.names[i - 1]);
+  snprintf(photos.names[0], PHOTO_NAME_MAX, "20260622-080000.jpg");
+  photos.n = 4;
+  ui.libraryChanged();
+  CHECK(ui.screen() == Screen::Viewer);
+  CHECK(strcmp(photos.names[ui.focus()], viewed) == 0);  // still the same photo
 }
 
 TEST(pictures_empty_card) {

@@ -47,6 +47,9 @@ class Ui {
   void setTime(int minutesSinceMidnight) { minutes_ = minutesSinceMidnight % (24 * 60); }
   // The photos on the SD card (Pictures page and viewer); nullptr shows no photos.
   void setLibrary(PhotoLibrary* library) { library_ = library; }
+  // Call after the library's contents change: focus follows the same photo (by name), or moves to
+  // one that still exists.
+  void libraryChanged();
   // Shutter presses since the last call: the host takes the photos (on the SD card) and refreshes
   // the library, so a new photo appears once it's saved.
   int takeCaptureRequests() {
@@ -88,6 +91,8 @@ class Ui {
   void activate();
   void back();
   void open(Screen page);
+  void clampPhotoFocus();
+  void rememberPhoto();
 
   Screen screen_ = Screen::Home;
   int minutes_ = 0;
@@ -108,6 +113,7 @@ class Ui {
   const uint16_t* preview_ = nullptr;
   PhotoLibrary* library_ = nullptr;
   int captureRequests_ = 0;
+  char focusedPhoto_[PHOTO_NAME_MAX] = {};  // name of photoFocus_'s photo, to find it again
 };
 
 // "June, 21, 2026" if it fits in maxWidth px, else "Jun, 21, 2026", else "Jun, 21".

@@ -22,26 +22,13 @@ bool SdPhotoLibrary::refresh() {
   count_ = 0;
   File dir = SD.open(PHOTO_DIR);
   if (!dir) return false;
-  for (File file = dir.openNextFile(); file && count_ < MAX; file = dir.openNextFile()) {
+  // The folder lists files in no useful order: keep the newest MAX while scanning all of them.
+  for (File file = dir.openNextFile(); file; file = dir.openNextFile()) {
     String name = file.name();
-    if (!file.isDirectory() && ours(name)) {
-      strncpy(names_[count_], name.c_str(), ui::PHOTO_NAME_MAX);
-      sizes_[count_] = file.size();
-      count_++;
-    }
+    if (!file.isDirectory() && ours(name)) ui::keepNewest(names_, sizes_, count_, MAX, name.c_str(), file.size());
     file.close();
   }
   dir.close();
-  // Newest first, keeping each size with its name.
-  char sorted[MAX][ui::PHOTO_NAME_MAX];
-  memcpy(sorted, names_, sizeof sorted[0] * count_);
-  ui::sortNewestFirst(sorted, count_);
-  uint32_t sizes[MAX];
-  for (int i = 0; i < count_; i++)
-    for (int j = 0; j < count_; j++)
-      if (strcmp(sorted[i], names_[j]) == 0) sizes[i] = sizes_[j];
-  memcpy(names_, sorted, sizeof sorted[0] * count_);
-  memcpy(sizes_, sizes, sizeof sizes[0] * count_);
   return true;
 }
 
