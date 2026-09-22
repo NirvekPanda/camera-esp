@@ -26,7 +26,7 @@ constexpr int PREVIEW_H = HEIGHT - PREVIEW_Y;
 constexpr int VIEWER_H = 177;
 
 // Pictures grid thumbnails are THUMB_SIZE x THUMB_SIZE (PhotoLibrary::pixels is asked for this
-// size and for PREVIEW_W x PREVIEW_H in the viewer).
+// size and for WIDTH x VIEWER_H in the viewer).
 constexpr int THUMB_SIZE = 64;
 
 // focus() values for the bottom bar, which is in the same place on every page:
@@ -39,7 +39,7 @@ constexpr int PRIMARY = -2;
 // One control model everywhere (docs/wii-theme.md): arrows only move focus, Center/A activate the
 // focused element, B goes back, and pages share the nav bar and bottom bar. The camera is a
 // full-screen app: Center takes a picture, A toggles the flash, B goes back home. The photo viewer
-// is full-screen too: Left/Right step through photos, B returns to the gallery.
+// has the shared bars: Left/Right step through photos, Down reaches Back and Delete.
 class Ui {
  public:
   void press(Button b);
@@ -52,12 +52,12 @@ class Ui {
   // Call after the library's contents change: focus follows the same photo (by name), or moves to
   // one that still exists.
   void libraryChanged();
-  // Shutter presses since the last call: the host takes the photos (on the SD card) and refreshes
-  // the library, so a new photo appears once it's saved.
   // The photo the user confirmed deleting, copied to out (PHOTO_NAME_MAX), once. The host removes
   // it from the SD card and calls libraryChanged(); the viewer then shows the next photo.
   bool takeDeleteRequest(char* out);
   bool confirmingDelete() const { return confirmDelete_; }
+  // Shutter presses since the last call: the host takes the photos (on the SD card) and refreshes
+  // the library, so a new photo appears once it's saved.
   int takeCaptureRequests() {
     int n = captureRequests_;
     captureRequests_ = 0;

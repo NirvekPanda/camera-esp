@@ -170,6 +170,24 @@ test("shows the USB icon while the camera is connected over WebSerial", async ({
   await expect(page.getByRole("status")).toHaveText("connected"); // the connection survived the tab switch
 });
 
+test("Delete, then Confirm, deletes a mock camera's photo", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("Camera source").selectOption({ label: "Mock: test pattern" });
+  await page.getByRole("button", { name: "Connect" }).click();
+  await page.getByRole("button", { name: "Take picture" }).click();
+  await expect(page.getByRole("heading", { name: "Photos (1)" })).toBeVisible();
+  await openDeviceTab(page);
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("Enter"); // Pictures
+  await expect.poll(() => onPictures(page)).toBe(true);
+  await page.keyboard.press("Enter"); // viewer
+  await expect.poll(() => onViewer(page)).toBe(true);
+  for (const key of ["ArrowDown", "ArrowRight", "Enter", "Enter"]) await page.keyboard.press(key); // Delete, Confirm
+  await expect.poll(() => onPictures(page)).toBe(true);
+  await page.getByRole("link", { name: "Camera" }).click();
+  await expect(page.getByRole("heading", { name: "Photos (0)" })).toBeVisible();
+});
+
 test("the Camera app shows the connected camera's live stream", async ({ page }) => {
   await page.addInitScript({ path: path.join(__dirname, "fake-serial-device.js") });
   await page.goto("/");
@@ -281,6 +299,7 @@ test.describe("Pictures page with the camera's SD card", () => {
     await page.keyboard.press("Enter"); // Confirm
     await expect.poll(files).toBe(0);
     await expect.poll(() => onPictures(page)).toBe(true); // nothing left to view
+    expect(await onViewer(page)).toBe(false);
     await page.getByRole("link", { name: "Camera" }).click();
     await expect(page.getByRole("heading", { name: "Photos (0)" })).toBeVisible();
   });

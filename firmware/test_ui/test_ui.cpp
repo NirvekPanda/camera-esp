@@ -875,6 +875,9 @@ TEST(viewer_has_back_and_delete_and_arrows_step_through_photos) {
   CHECK(!sameRegion(fb, fb2, {0, 28, WIDTH, 177}));  // a different photo
   for (int i = 0; i < 10; i++) ui.press(Button::Right);
   CHECK_EQ(ui.focus(), ui.photoCount() - 1);  // stops at the last photo
+  for (int i = 0; i < 10; i++) ui.press(Button::Left);
+  CHECK_EQ(ui.focus(), 0);  // and at the first
+  for (int i = 0; i < 10; i++) ui.press(Button::Right);
   ui.press(Button::Down);  // into the bottom bar: Back
   CHECK_EQ(ui.focus(), BACK);
   ui.press(Button::Right);  // Delete, right of Back
@@ -901,14 +904,19 @@ TEST(delete_turns_into_a_red_confirm_and_a_second_press_deletes) {
   CHECK_EQ(ui.focus(), PRIMARY);  // still on the same button
   ui.render(fb);
   CHECK_EQ(fb.at(194, 214), color::danger);
+  ui.press(Button::Right);  // still on it: stays armed
+  CHECK(ui.confirmingDelete());
   ui.press(Button::Left);  // moving away disarms
   CHECK(!ui.confirmingDelete());
   ui.press(Button::Right);
   ui.press(Button::Center);
-  ui.press(Button::B);  // B disarms, and stays
+  ui.press(Button::B);  // B goes back, as everywhere, and disarms
   CHECK(!ui.confirmingDelete());
-  CHECK(ui.screen() == Screen::Viewer);
+  CHECK(ui.screen() == Screen::Pictures);
   CHECK(!ui.takeDeleteRequest(name));
+  ui.press(Button::Center);  // view it again
+  ui.press(Button::Down);
+  ui.press(Button::Right);
   ui.press(Button::Center);  // Delete, Confirm
   ui.press(Button::Center);
   CHECK(!ui.confirmingDelete());
@@ -933,6 +941,26 @@ TEST(viewer_moves_on_after_its_photo_is_deleted) {
   photos.n = 0;
   ui.libraryChanged();
   CHECK(ui.screen() == Screen::Pictures);  // nothing left to view
+}
+
+TEST(an_armed_confirm_never_carries_over_to_another_photo) {
+  FakeLibrary photos(3);
+  Ui ui;
+  openPage(ui, 1);
+  ui.setLibrary(&photos);
+  ui.press(Button::Center);  // view photo 0
+  ui.press(Button::Down);
+  ui.press(Button::Right);
+  ui.press(Button::Center);  // armed on photo 0
+  CHECK(ui.confirmingDelete());
+  snprintf(photos.names[0], PHOTO_NAME_MAX, "%s", photos.names[1]);  // photo 0 removed elsewhere
+  snprintf(photos.names[1], PHOTO_NAME_MAX, "%s", photos.names[2]);
+  photos.n = 2;
+  ui.libraryChanged();
+  CHECK(!ui.confirmingDelete());
+  ui.press(Button::Center);  // Delete again, not Confirm
+  char name[PHOTO_NAME_MAX];
+  CHECK(!ui.takeDeleteRequest(name));
 }
 
 TEST(settings_icon_is_a_gear) {

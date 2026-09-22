@@ -177,19 +177,24 @@ def main():
         return f"{name} → 64×64 and 240×177 RGB565"
     check("SD photo decoded on the device", decoded_on_device)
 
+    taken = []  # photos this test takes and then deletes, never the user's
+
     def preview_ready():
         # Capture saves a 240x180 preview next to the photo, so showing it skips the full decode.
         name = json.loads(cam.request(CAPTURE, expect=CAPTURED))["name"]
+        taken.append(name)
         start = time.monotonic()
-        cam.request(PHOTO_PIXELS, struct.pack("<HH", 240, 177) + name.encode(), expect=PIXELS, timeout=30)
+        cam.request(PHOTO_PIXELS, struct.pack("<HH", 64, 64) + name.encode(), expect=PIXELS, timeout=30)
         took = time.monotonic() - start
-        if took > 0.5:
+        if took > 1:  # measured ~0.3 s from the preview; a full decode takes 2-4 s
             raise AssertionError(f"{took:.2f} s: no ready-made preview?")
         return f"{name} in {took * 1000:.0f} ms"
     check("new photo shows from its preview", preview_ready)
 
     def delete():
-        name = json.loads(cam.request(LIST, expect=FILE_LIST))[0]["name"]  # the one just taken
+        if not taken:
+            raise AssertionError("no test photo to delete")
+        name = taken[0]
         cam.request(DELETE_FILE, name.encode())
         if any(f["name"] == name for f in json.loads(cam.request(LIST, expect=FILE_LIST))):
             raise AssertionError(f"{name} is still listed")
@@ -197,6 +202,8 @@ def main():
         # Pixels come from the preview first: an error means the preview is gone too.
         cam.request(PHOTO_PIXELS, struct.pack("<HH", 64, 64) + name.encode(), expect=ERROR)
         cam.request(DELETE_FILE, name.encode(), expect=ERROR)
+        for bad in (b"", b"previews", b"../x.jpg", b"previews\\x.jpg"):  # never a folder or a path
+            cam.request(DELETE_FILE, bad, expect=ERROR)
         return f"{name}: photo and preview"
     check("delete", delete)
     check("stream off", lambda: cam.request(STREAM, b"\x00") and None)

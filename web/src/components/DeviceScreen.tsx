@@ -126,6 +126,7 @@ export function DeviceScreen() {
     thumbCache.current.clear(); // a different camera
     if (!ui) return;
     ui.takeCaptureRequests(); // presses from before this camera was connected don't count
+    ui.takeDeleteRequest(); // nor a delete confirmed for the previous camera's photo
     if (!source) return;
     let cancelled = false;
     let loading: string | null = null;

@@ -115,8 +115,9 @@ The Wii's pointer and big TV don't fit here. What changes:
   show the name instead. The photo opens focused, and Left/Right step through the photos. Down
   reaches the bottom bar: **Back** bottom-left and **Delete** bottom-right. Pressing Delete turns it
   into a red **Confirm** in the same place, and pressing it again asks the host to delete the photo
-  (`takeDeleteRequest`), which removes the photo, its preview and its cached thumbnail. Any arrow
-  or B disarms Confirm. B returns to the gallery.
+  (`takeDeleteRequest`), which removes the photo, its preview and its cached thumbnail. Confirm
+  lasts only while it has focus and only for that photo: moving off it, B (back to the gallery, as
+  everywhere) or a change to the photo list disarms it.
   Settings change with Center, which toggles or cycles the value, because arrows never change
   values. The settings are Resolution, Mirror, Flip vertical, **Grid** (rule-of-thirds overlay on
   the camera), **Clock** (24h, or 12h with AM/PM in the nav bar) and About. Five rows are visible,

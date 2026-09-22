@@ -7,6 +7,7 @@ namespace {
 constexpr int BAR_H = 27;       // nav bar; its divider is the row below
 constexpr int BOTTOM_Y = 206;   // bottom bar; its divider is the row above
 constexpr Rect CONTENT = {0, BAR_H + 1, WIDTH, BOTTOM_Y - BAR_H - 2};
+static_assert(CONTENT.y == PREVIEW_Y && CONTENT.h == VIEWER_H, "the viewer fills the content area");
 // Bottom bar buttons: Back always bottom-left, the primary action always bottom-right.
 constexpr Rect BACK_BUTTON = {8, BOTTOM_Y + 5, 76, 24};
 constexpr Rect PRIMARY_BUTTON = {WIDTH - 8 - 76, BOTTOM_Y + 5, 76, 24};
@@ -174,10 +175,7 @@ void Ui::pressCamera(Button b) {
 }
 
 void Ui::back() {
-  if (confirmDelete_) {  // B while armed: disarm, not leave
-    confirmDelete_ = false;
-    return;
-  }
+  confirmDelete_ = false;
   if (screen_ == Screen::Camera) preview_ = nullptr;  // never reopen on a stale frame
   viewerFocus_ = 0;
   screen_ = screen_ == Screen::Viewer ? Screen::Pictures : Screen::Home;
@@ -230,7 +228,6 @@ void Ui::pressPage(Button b) {
       if (b == Button::Up) settingFocus_ = settingFocus_ == BACK ? SETTING_COUNT - 1 : settingFocus_ > 0 ? settingFocus_ - 1 : 0;
       return;
     default:  // Viewer: the photo (Left/Right step through photos), then Back and Delete below
-      confirmDelete_ = false;  // any move disarms Confirm
       if (viewerFocus_ == 0) {
         if (b == Button::Left && photoFocus_ > 0) photoFocus_--;
         if (b == Button::Right && photoFocus_ < photoCount() - 1) photoFocus_++;
@@ -242,6 +239,7 @@ void Ui::pressPage(Button b) {
         if (b == Button::Right) viewerFocus_ = PRIMARY;
         if (b == Button::Up) viewerFocus_ = 0;
       }
+      if (viewerFocus_ != PRIMARY) confirmDelete_ = false;  // Confirm lasts while it has focus
       return;
   }
 }
@@ -309,6 +307,7 @@ void Ui::rememberPhoto() {
 }
 
 void Ui::libraryChanged() {
+  confirmDelete_ = false;  // Confirm was for the photo as it was: never carry it to another
   const int photos = photoCount();
   for (int i = 0; i < photos && focusedPhoto_[0]; i++) {
     const char* name = library_->name(i);

@@ -22,6 +22,11 @@ String previewPath(const char* name) {
   return String(PREVIEW_DIR) + "/" + base + ".rgb";
 }
 
+bool ours(const String& name) {  // photos this camera saved; also safe to put in JSON as is
+  return name.endsWith(".jpg") && name.length() < ui::PHOTO_NAME_MAX && name.indexOf('"') < 0 && name.indexOf('/') < 0 &&
+         name.indexOf('\\') < 0;
+}
+
 void* psram(size_t bytes) { return heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM); }
 
 // Decodes an in-memory JPEG, center-cropped and scaled to w x h RGB565.
@@ -42,9 +47,13 @@ bool decodeJpeg(const uint8_t* jpeg, size_t length, int w, int h, uint16_t* out)
   return ok;
 }
 
-bool ours(const String& name) {  // photos this camera saved; also safe to put in JSON as is
-  return name.endsWith(".jpg") && name.length() < ui::PHOTO_NAME_MAX && name.indexOf('"') < 0 &&
-         name.indexOf('\\') < 0;
+bool writePreview(const char* name, const uint16_t* preview) {
+  if (!SD.exists(PREVIEW_DIR)) SD.mkdir(PREVIEW_DIR);
+  File file = SD.open(previewPath(name), FILE_WRITE);
+  bool ok = file && file.write(reinterpret_cast<const uint8_t*>(preview), PREVIEW_BYTES) == PREVIEW_BYTES;
+  file.close();
+  if (!ok) SD.remove(previewPath(name));  // never leave a partial preview
+  return ok;
 }
 
 }  // namespace
@@ -65,14 +74,8 @@ bool SdPhotoLibrary::refresh() {
 
 bool SdPhotoLibrary::savePreview(const char* name, const uint8_t* jpeg, size_t length) {
   uint16_t* preview = static_cast<uint16_t*>(psram(PREVIEW_BYTES));
-  bool ok = preview && decodeJpeg(jpeg, length, PREVIEW_W, PREVIEW_H, preview);
-  if (ok) {
-    if (!SD.exists(PREVIEW_DIR)) SD.mkdir(PREVIEW_DIR);
-    File file = SD.open(previewPath(name), FILE_WRITE);
-    ok = file && file.write(reinterpret_cast<const uint8_t*>(preview), PREVIEW_BYTES) == PREVIEW_BYTES;
-    file.close();
-    if (!ok) SD.remove(previewPath(name));  // never leave a partial preview
-  }
+  bool ok = preview && decodeJpeg(jpeg, length, PREVIEW_W, PREVIEW_H, preview) && writePreview(name, preview);
+  if (!ok) SD.remove(previewPath(name));  // never leave another photo's preview under this name
   free(preview);
   return ok;
 }
@@ -90,7 +93,7 @@ bool SdPhotoLibrary::decode(const char* name, int w, int h, uint16_t* out) {
     ok = jpeg && photo.read(jpeg, length) == length;
     photo.close();
     ok = ok && decodeJpeg(jpeg, length, PREVIEW_W, PREVIEW_H, preview);
-    if (ok) savePreview(name, jpeg, length);
+    if (ok) writePreview(name, preview);
     free(jpeg);
   }
   if (ok) ui::scaleCover(preview, PREVIEW_W, PREVIEW_H, out, w, h);
@@ -99,10 +102,13 @@ bool SdPhotoLibrary::decode(const char* name, int w, int h, uint16_t* out) {
 }
 
 bool SdPhotoLibrary::remove(const char* name) {
+  if (!ours(name)) return false;  // photos only: never a folder or a path
   for (Cached& c : cache_)  // a later photo can reuse the name (IMG_0001.jpg)
     if (c.pixels && strcmp(c.name, name) == 0) c.name[0] = 0;
   SD.remove(previewPath(name));
-  return SD.remove(photoPath(name));
+  const bool removed = SD.remove(photoPath(name));
+  refresh();
+  return removed;
 }
 
 bool SdPhotoLibrary::pixels(int index, int w, int h, uint16_t* out) {

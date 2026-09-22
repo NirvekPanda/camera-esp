@@ -16,6 +16,7 @@
   const camera = {
     silent: false, // true = no firmware: never replies
     dropNextReply: false, // true = lose the next reply, like bytes dropped on the USB link
+    wrongNextReply: false, // true = answer the next command with PIXELS, like a reply shifted by lost bytes
     oldFirmware: false, // true = firmware from before VFLIP existed
     connectDelayMs: 0, // a slow port (e.g. while the permission prompt is open)
     failPixels: false, // true = PHOTO_PIXELS can't decode (e.g. a corrupt file)
@@ -85,6 +86,10 @@
     if (camera.dropNextReply) {
       camera.dropNextReply = false;
       return;
+    }
+    if (camera.wrongNextReply) {
+      camera.wrongNextReply = false;
+      return send(T.PIXELS, new Uint8Array(4));
     }
     const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
     switch (type) {

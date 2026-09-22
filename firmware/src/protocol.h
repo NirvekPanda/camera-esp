@@ -61,6 +61,7 @@ class Parser {
 
   // Returns true when a complete packet is in type/length/payload.
   bool feed(uint8_t byte) {
+    lastByteMs_ = millis();
     if (headerLength < 2) {
       if (byte == MAGIC[headerLength]) header[headerLength++] = byte;
       else headerLength = byte == MAGIC[0] ? 1 : 0;  // A5 A5 5A still syncs
@@ -90,6 +91,14 @@ class Parser {
   uint8_t header[HEADER_SIZE];
   size_t headerLength = 0;
   uint32_t received = 0;
+  uint32_t lastByteMs_ = 0;
+
+ public:
+  // The host writes each command whole, so one still incomplete after a pause lost bytes. Drop
+  // it: otherwise its length swallows the next commands and the camera stops answering.
+  void dropStale(uint32_t now) {
+    if (headerLength > 0 && now - lastByteMs_ > 250) headerLength = 0;
+  }
 };
 
 }  // namespace protocol

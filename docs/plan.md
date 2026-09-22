@@ -161,7 +161,18 @@ Binary packets, so JPEGs need no base64:
 - **A missing reply means a broken link.** If a command times out (5 s, 30 s for `GET_FILE`) or a
   write fails, later replies can no longer be matched safely. So the site disconnects with an
   error: "Camera stopped responding", or "No camera firmware detected" if the very first command
-  gets no answer.
+  gets no answer. A reply of the wrong type means bytes were lost and replies have shifted, so
+  the site disconnects with "Lost sync with the camera" rather than pairing every later reply
+  with the wrong command (which once showed as blank photos).
+- **Keeping the USB link intact** (all found on the board under load, `make hwtest` plus a
+  pipelined stress run):
+  - The USB Serial/JTAG driver drops TX bytes when the host doesn't read for its timeout (100 ms
+    by default), which splits packets. The firmware waits 1 s (`setTxTimeoutMs`), so a browser
+    pause (GC, busy tab) no longer corrupts a reply.
+  - Its RX buffer (256 bytes by default) overflowed when commands queued behind a slow decode, and
+    the parser then waited forever for a payload whose bytes were gone: the camera stopped
+    answering until reset. The buffer is 4 KB, and the parser drops a packet still incomplete
+    after 250 ms (`Parser::dropStale`).
 - The firmware stops streaming when a USB write comes back short (the host stopped reading). Every
   connect sends `STREAM 1` again.
 - Both parsers (`protocol.ts`, `firmware/src/protocol.h`) scan for `A5 5A` and resync after noise or
@@ -308,7 +319,10 @@ firmware/
     that best covers the target, then `scaleCover` for the exact size.
   - Caches the last 8 decoded images in PSRAM (a screen of thumbnails plus the viewer image).
   - `remove` (`DELETE_FILE`) deletes the photo, its preview and its cached images, since a later
-    photo can reuse the name (`IMG_0001.jpg`). The site drops its cached thumbnail too.
+    photo can reuse the name (`IMG_0001.jpg`), then rescans. It only takes names `LIST` would show
+    (`.jpg`, no `/` or `\`), never a folder. The site drops its cached thumbnail too.
+  - Timing on the board: a thumbnail from its preview takes about 0.3 s, and the viewer image
+    about 0.4 s with the transfer. Making a missing preview (one full decode) takes 2 to 4 s, once.
   - `jpg2rgb565` outputs native little-endian `uint16_t` pixels. Swapping the bytes scrambles
     photos into green and colored noise, which happened once. `make hwtest` measures the decode's
     roughness (the mean difference between neighboring pixels): correct photos score about 1,
@@ -316,11 +330,11 @@ firmware/
 
   Verified on the board with a microSD card: capture at 2048×1536, newest-first `LIST`,
   download, and on-device decode to 64×64 and 240×212 matching the original photo. `make hwtest`
-  also checks that a new photo shows from its preview (under 0.5 s) and that delete removes the photo
-  and its preview.
+  also checks that a new photo shows from its preview (under 1 s) and that delete removes the photo
+  it took, and its preview, and refuses folders and paths.
   `LIST` and `PHOTO_PIXELS` already use it, so `make hwtest` exercises the same SD code the device
   UI will use once the display is wired.
-- **SD card:** SPI, CS = GPIO21 (shared with the user LED, so the LED is unused). With no card,
+- **SD card:** SPI at 20 MHz, CS = GPIO21 (shared with the user LED, so the LED is unused). With no card,
   `CAPTURE` / `LIST` / `GET_FILE` reply `ERROR "No SD card"`, and streaming still works. A failed
   write deletes the partial file.
 - **Flashing:** **Update firmware** on the site (header, every tab) or `make flash` / `make upload`
