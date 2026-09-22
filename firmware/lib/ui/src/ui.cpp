@@ -159,12 +159,12 @@ void Ui::press(Button b) {
 }
 
 void Ui::pressCamera(Button b) {
-  if (b == Button::A && photos_ < MAX_PHOTOS) {  // the flash only confirms a photo that was saved
+  if (b == Button::Center && photos_ < MAX_PHOTOS) {  // shutter; the blink confirms a saved photo
     photos_++;
     flashT_ = 0;
   }
-  if (b == Button::B) flash_ = !flash_;
-  if (b == Button::Center) screen_ = Screen::Home;  // MENU/OK, as on point-and-shoot cameras
+  if (b == Button::A) flash_ = !flash_;
+  if (b == Button::B) back();  // Back, as on every other screen
 }
 
 void Ui::back() { screen_ = screen_ == Screen::Viewer ? Screen::Pictures : Screen::Home; }
@@ -259,7 +259,10 @@ void Ui::render(Framebuffer& fb) const {
   }
   char name[13];
   photoName(name, photoFocus_);
-  const char* title = screen_ == Screen::Home ? nullptr : screen_ == Screen::Viewer ? name : PAGE_NAMES[int(screen_) - 1];
+  // The camera shows an icon instead of a text title; Home has no title.
+  const char* title = screen_ == Screen::Home || screen_ == Screen::Camera ? nullptr
+                      : screen_ == Screen::Viewer                          ? name
+                                                                           : PAGE_NAMES[int(screen_) - 1];
   renderNavBar(fb, title);
   switch (screen_) {
     case Screen::Camera: return;  // full-screen picture: no bottom bar
@@ -305,6 +308,13 @@ void Ui::renderNavBar(Framebuffer& fb, const char* title) const {
   int x = fb.drawText(fonts::large, 8, 1, clock, color::text);
   if (clock12_) x = fb.drawText(fonts::small, x + 3, 9, hour < 12 ? "AM" : "PM", color::text);
   if (title) fb.drawText(fonts::small, x + 10, 6, title, color::ink);
+  if (screen_ == Screen::Camera) {  // small camera icon in place of a title
+    int ix = x + 10, iy = 8;
+    fb.fillRect({ix + 5, iy, 6, 3}, color::ink);
+    fb.fillRoundRect({ix, iy + 2, 16, 11}, 3, color::ink);
+    fb.fillCircle(ix + 8, iy + 7, 3, color::bar);
+    fb.fillCircle(ix + 8, iy + 7, 1, color::ink);
+  }
   // Status icons, right to left: USB or battery, then the flash when it's on.
   int right = WIDTH - 6;
   if (link_ == Link::Usb) right = drawUsb(fb, WIDTH - 32, BAR_H / 2) - 8;

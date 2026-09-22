@@ -355,23 +355,34 @@ TEST(center_opens_page_after_zoom) {
   CHECK(ui.screen() == Screen::Camera);
 }
 
-TEST(camera_a_shoots_b_toggles_flash_center_is_menu) {
+TEST(camera_center_shoots_a_toggles_flash_b_goes_back) {
   Ui ui;
   openPage(ui, 0);
   int before = ui.photoCount();
-  ui.press(Button::A);
+  ui.press(Button::Center);  // the shutter
   CHECK_EQ(ui.photoCount(), before + 1);
-  CHECK(ui.animating());  // shutter flash
+  CHECK(ui.animating());  // shutter blink
   ui.tick(FLASH_MS);
   CHECK(!ui.flashOn());
-  ui.press(Button::B);
+  ui.press(Button::A);
   CHECK(ui.flashOn());
-  ui.press(Button::B);
+  ui.press(Button::A);
   CHECK(!ui.flashOn());
-  CHECK(ui.screen() == Screen::Camera);  // B doesn't leave the camera
-  ui.press(Button::Center);               // MENU/OK, as on point-and-shoot cameras
+  CHECK(ui.screen() == Screen::Camera);  // neither leaves the camera
+  ui.press(Button::B);                    // Back, as everywhere else
   CHECK(ui.screen() == Screen::Home);
   CHECK_EQ(ui.focus(), 0);  // back on the Camera tile
+}
+
+TEST(camera_title_is_an_icon_not_a_label) {
+  Ui camera, settings;
+  openPage(camera, 0);
+  openPage(settings, 2);
+  camera.render(fb);
+  CHECK(regionHas(fb, {60, 0, 40, 27}, color::ink));   // the icon after the clock
+  CHECK(!regionHas(fb, {100, 0, 80, 27}, color::ink)); // no "Camera" text beyond it
+  settings.render(fb2);
+  CHECK(regionHas(fb2, {100, 0, 40, 27}, color::ink)); // other pages keep their text title
 }
 
 TEST(camera_shows_only_picture_and_nav_bar) {
@@ -388,7 +399,7 @@ TEST(camera_grid_overlay) {
   openPage(ui, 0);
   ui.render(fb);
   CHECK(fb.at(WIDTH / 3, 60) != color::white);  // yellow bar, no grid
-  ui.press(Button::Center);                     // home, then Settings -> Grid
+  ui.press(Button::B);                          // home, then Settings -> Grid
   ui.press(Button::Right);
   ui.press(Button::Right);
   ui.press(Button::Center);
@@ -444,9 +455,9 @@ TEST(twelve_hour_clock) {
 TEST(flash_is_only_active_inside_the_camera) {
   Ui ui;
   openPage(ui, 0);
-  ui.press(Button::B);
+  ui.press(Button::A);
   CHECK(ui.flashOn());
-  ui.press(Button::Center);  // home: the ring around the display must go dark
+  ui.press(Button::B);  // home: the ring around the display must go dark
   CHECK(!ui.flashOn());
   ui.press(Button::Center);
   ui.tick(OPEN_MS);
@@ -458,7 +469,7 @@ TEST(flash_icon_sits_with_the_status_icons) {
   openPage(ui, 0);
   ui.setLink(Link::Usb);
   ui.render(fb);
-  ui.press(Button::B);
+  ui.press(Button::A);
   ui.render(fb2);
   const Rect status = {WIDTH / 2, 0, WIDTH / 2, 27}, left = {0, 0, WIDTH / 2, 27};
   CHECK(regionHas(fb2, status, color::accent));  // top-right, beside the USB icon
@@ -471,7 +482,7 @@ TEST(flash_does_not_draw_on_the_picture) {
   Ui ui;
   openPage(ui, 0);
   ui.render(fb);
-  ui.press(Button::B);
+  ui.press(Button::A);
   ui.render(fb2);
   CHECK(sameRegion(fb, fb2, {0, 28, WIDTH, HEIGHT - 28}));
 }
@@ -479,7 +490,7 @@ TEST(flash_does_not_draw_on_the_picture) {
 TEST(arrows_never_change_settings_or_leave_pages) {
   Ui ui;
   openPage(ui, 0);
-  ui.press(Button::B);  // flash on; arrows mustn't change it either
+  ui.press(Button::A);  // flash on; arrows mustn't change it either
   bool flash = ui.flashOn();
   bool mirrored = ui.mirrored();
   int resolution = ui.resolution();
@@ -575,8 +586,8 @@ TEST(down_enters_a_partly_filled_row_before_the_bottom_bar) {
 TEST(no_flash_when_no_photo_is_taken) {
   Ui ui;
   openPage(ui, 0);
-  while (ui.photoCount() < MAX_PHOTOS) ui.press(Button::A), ui.tick(FLASH_MS);
-  ui.press(Button::A);  // storage full: nothing saved
+  while (ui.photoCount() < MAX_PHOTOS) ui.press(Button::Center), ui.tick(FLASH_MS);
+  ui.press(Button::Center);  // storage full: nothing saved
   CHECK_EQ(ui.photoCount(), MAX_PHOTOS);
   CHECK(!ui.animating());  // so no shutter flash either
 }
