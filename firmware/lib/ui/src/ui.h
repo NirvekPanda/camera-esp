@@ -27,7 +27,8 @@ constexpr int PRIMARY = -2;
 // ticks give the same pixels on the device and in the WASM build.
 // One control model everywhere (docs/wii-theme.md): arrows only move focus, Center/A activate the
 // focused element, B goes back, and pages share the nav bar and bottom bar. The camera is the one
-// full-screen app: A takes a picture, B toggles the flash, Center (MENU/OK) returns home.
+// full-screen app: A takes a picture, B toggles the flash, Center (MENU/OK) returns home. The photo
+// viewer is full-screen too: Left/Right step through photos, B returns to the gallery.
 class Ui {
  public:
   void press(Button b);

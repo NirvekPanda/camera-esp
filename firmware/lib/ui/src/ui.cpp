@@ -54,11 +54,25 @@ void drawIcon(Framebuffer& fb, int page, int cx, int cy) {
       for (int r = 0; r < 3; r++)
         for (int c = 0; c < 3; c++) fb.fillRoundRect({cx - 13 + c * 9, cy - 13 + r * 9, 8, 8}, 2, (r + c) % 2 ? color::accent : color::ink);
       break;
-    default:  // settings: gear
-      fb.fillRect({cx - 13, cy - 3, 26, 6}, color::ink);
-      fb.fillRect({cx - 3, cy - 13, 6, 26}, color::ink);
-      fb.fillCircle(cx, cy, 9, color::ink);
-      fb.fillCircle(cx, cy, 4, color::tile);
+    default: {  // settings: an 8-tooth gear (integer geometry, identical on every target)
+      // Unit directions x1000 for the 8 teeth (0°, 45°, ... around the circle).
+      static const int DIRS[8][2] = {{1000, 0}, {707, 707}, {0, 1000}, {-707, 707},
+                                     {-1000, 0}, {-707, -707}, {0, -1000}, {707, -707}};
+      const int body = 9, outer = 12, hole = 4, halfTooth = 2500;  // tooth half-width 2.5 px, x1000
+      for (int dy = -outer; dy <= outer; dy++)
+        for (int dx = -outer; dx <= outer; dx++) {
+          int r2 = dx * dx + dy * dy;
+          bool inBody = r2 <= body * body;
+          bool inTooth = false;
+          for (const auto& d : DIRS) {
+            int along = dx * d[0] + dy * d[1];
+            int across = dx * d[1] - dy * d[0];
+            if (along > 0 && (across < 0 ? -across : across) <= halfTooth && r2 <= outer * outer) inTooth = true;
+          }
+          if (r2 <= hole * hole) fb.fillRect({cx + dx, cy + dy, 1, 1}, color::tile);
+          else if (inBody || inTooth) fb.fillRect({cx + dx, cy + dy, 1, 1}, color::ink);
+        }
+    }
   }
 }
 
@@ -105,8 +119,8 @@ void outline(Framebuffer& fb, Rect r, int radius, bool focused) {
   fb.strokeRoundRect(r, radius, focused ? FOCUS_STROKE : 1, focused ? color::accent : color::line);
 }
 
-void photoPlaceholder(Framebuffer& fb, Rect r, int index) {  // a sun over a hill
-  fb.fillRoundRect(r, r.w / 6, THUMB_COLORS[index % 5]);
+void photoPlaceholder(Framebuffer& fb, Rect r, int index, int radius) {  // a sun over a hill
+  fb.fillRoundRect(r, radius, THUMB_COLORS[index % 5]);
   fb.fillCircle(r.x + r.w * 72 / 100, r.y + r.h * 28 / 100, r.w / 9, color::tile);
   fb.fillRoundRect({r.x + r.w / 10, r.y + r.h * 6 / 10, r.w * 8 / 10, r.h * 3 / 10}, r.h / 8, color::tile);
 }
@@ -130,7 +144,7 @@ int Ui::focus() const {
     case Screen::Camera: return 0;  // nothing focusable: the camera is full-screen
     case Screen::Pictures: return photoFocus_;
     case Screen::Settings: return settingFocus_;
-    case Screen::Viewer: return BACK;
+    case Screen::Viewer: return photoFocus_;  // the photo being viewed
     default: return homeFocus_;
   }
 }
@@ -190,13 +204,17 @@ void Ui::pressPage(Button b) {
       if (b == Button::Down) settingFocus_ = settingFocus_ == BACK || settingFocus_ == SETTING_COUNT - 1 ? BACK : settingFocus_ + 1;
       if (b == Button::Up) settingFocus_ = settingFocus_ == BACK ? SETTING_COUNT - 1 : settingFocus_ > 0 ? settingFocus_ - 1 : 0;
       return;
-    default:  // Viewer: Back is the only control
+    default:  // Viewer: Left/Right step through the photos
+      if (b == Button::Left && photoFocus_ > 0) photoFocus_--;
+      if (b == Button::Right && photoFocus_ < photos_ - 1) photoFocus_++;
+      lastPhoto_ = photoFocus_;
       return;
   }
 }
 
 // Center/A activate whatever is focused, on every page.
 void Ui::activate() {
+  if (screen_ == Screen::Viewer) return;  // the focused photo is already open
   if (focus() == BACK) return back();
   switch (screen_) {
     case Screen::Pictures:
@@ -247,7 +265,7 @@ void Ui::render(Framebuffer& fb) const {
     case Screen::Camera: return;  // full-screen picture: no bottom bar
     case Screen::Pictures: return renderBottomBar(fb, photoFocus_, nullptr);
     case Screen::Settings: return renderBottomBar(fb, settingFocus_, nullptr);
-    case Screen::Viewer: return renderBottomBar(fb, BACK, nullptr);
+    case Screen::Viewer: return;  // full-screen photo: B goes back to the gallery
     default: return renderBottomBar(fb, 0, nullptr);  // Home: the page dots live in the bar
   }
 }
@@ -343,7 +361,7 @@ void Ui::renderPictures(Framebuffer& fb) const {
   int top = row > 0 ? row - 1 : 0;  // keep the focused row visible
   for (int i = top * COLS; i < photos_ && i < (top + 2) * COLS; i++) {
     Rect r = {GRID_X + (i % COLS) * THUMB_PITCH, GRID_Y + (i / COLS - top) * THUMB_PITCH, THUMB, THUMB};
-    photoPlaceholder(fb, r, i);
+    photoPlaceholder(fb, r, i, 10);
     outline(fb, r, 10, i == photoFocus_);
   }
 }
@@ -366,10 +384,8 @@ void Ui::renderSettings(Framebuffer& fb) const {
   }
 }
 
-void Ui::renderViewer(Framebuffer& fb) const {
-  const Rect photo = {CONTENT.x + 12, CONTENT.y + 10, CONTENT.w - 24, CONTENT.h - 20};
-  photoPlaceholder(fb, photo, photoFocus_);
-  outline(fb, photo, photo.w / 6, false);
+void Ui::renderViewer(Framebuffer& fb) const {  // full screen, like the camera
+  photoPlaceholder(fb, {0, BAR_H + 1, WIDTH, HEIGHT - BAR_H - 1}, photoFocus_, 0);
 }
 
 }  // namespace ui

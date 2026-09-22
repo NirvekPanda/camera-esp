@@ -413,7 +413,7 @@ TEST(a_is_ok_and_b_is_back_outside_the_camera) {
   CHECK(ui.screen() == Screen::Pictures);
   ui.press(Button::A);  // opens the focused photo
   CHECK(ui.screen() == Screen::Viewer);
-  ui.press(Button::B);
+  ui.press(Button::B);  // the viewer has no Back button: B is the way back
   CHECK(ui.screen() == Screen::Pictures);
   ui.press(Button::B);
   CHECK(ui.screen() == Screen::Home);
@@ -507,8 +507,10 @@ TEST(pictures_grid_bottom_bar_and_viewer) {
   CHECK_EQ(ui.focus(), 4);
   ui.press(Button::Center);  // Center activates the focused photo
   CHECK(ui.screen() == Screen::Viewer);
-  CHECK_EQ(ui.focus(), BACK);  // the viewer's only control
-  ui.press(Button::Center);
+  CHECK_EQ(ui.focus(), 4);  // the photo being viewed
+  ui.press(Button::Center);  // already open: nothing to activate
+  CHECK(ui.screen() == Screen::Viewer);
+  ui.press(Button::B);
   CHECK(ui.screen() == Screen::Pictures);
   CHECK_EQ(ui.focus(), 4);  // same photo still focused
   goBack(ui);
@@ -582,17 +584,57 @@ TEST(no_flash_when_no_photo_is_taken) {
 // The Back button is the same pixels in the same place on every page that has one.
 TEST(back_button_is_identical_on_every_page) {
   const Rect back = {0, 206, WIDTH / 2, HEIGHT - 206};
-  Ui pictures, settings, viewer;
+  Ui pictures, settings;
   openPage(pictures, 1);  // a photo focused: Back unfocused
   openPage(settings, 2);  // a row focused: Back unfocused
   pictures.render(fb);
   settings.render(fb2);
   CHECK(sameRegion(fb, fb2, back));
   CHECK(!regionHas(fb, back, color::accent));
-  openPage(viewer, 1);
-  viewer.press(Button::Center);  // viewer: Back is its only control, so it's focused
-  viewer.render(fb);
+  pictures.press(Button::Down);
+  pictures.press(Button::Down);  // below the grid: Back focused
+  pictures.render(fb);
   CHECK(regionHas(fb, back, color::accent));  // focused: the same blue outline as tiles
+}
+
+TEST(viewer_is_full_screen_and_arrows_step_through_photos) {
+  Ui ui;
+  openPage(ui, 1);
+  ui.press(Button::Right);
+  ui.press(Button::A);
+  CHECK(ui.screen() == Screen::Viewer);
+  ui.render(fb);
+  CHECK(!regionHas(fb, {0, 206, WIDTH, HEIGHT - 206}, color::bar));  // no bottom bar
+  CHECK_EQ(fb.at(120, 27), color::line);  // nav bar (file name) still there
+  ui.press(Button::Right);
+  CHECK_EQ(ui.focus(), 2);
+  ui.render(fb2);
+  CHECK(!sameRegion(fb, fb2, {0, 28, WIDTH, HEIGHT - 28}));  // a different photo
+  ui.press(Button::Right);
+  ui.press(Button::Right);
+  ui.press(Button::Right);
+  CHECK_EQ(ui.focus(), ui.photoCount() - 1);  // stops at the last photo
+  for (int i = 0; i < 10; i++) ui.press(Button::Left);
+  CHECK_EQ(ui.focus(), 0);  // and at the first
+  ui.press(Button::Up);
+  ui.press(Button::Down);
+  CHECK(ui.screen() == Screen::Viewer);  // up/down don't leave or change anything
+  CHECK_EQ(ui.focus(), 0);
+}
+
+TEST(settings_icon_is_a_gear) {
+  Ui ui;
+  ui.press(Button::Right);
+  ui.press(Button::Right);
+  ui.tick(FOCUS_MS);  // Settings tile centered at (120, 104)
+  ui.render(fb);
+  const int cx = 120, cy = 104;
+  CHECK_EQ(fb.at(cx, cy), color::tile);            // center hole
+  CHECK_EQ(fb.at(cx + 6, cy), color::ink);         // body
+  CHECK_EQ(fb.at(cx, cy - 11), color::ink);        // tooth, up
+  CHECK_EQ(fb.at(cx + 8, cy - 8), color::ink);     // tooth, up-right
+  CHECK_EQ(fb.at(cx + 4, cy - 11), color::tile);   // gap between teeth
+  CHECK_EQ(fb.at(cx + 11, cy + 4), color::tile);   // gap between teeth
 }
 
 TEST(no_hint_text_on_home) {

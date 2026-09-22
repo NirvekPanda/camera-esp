@@ -20,7 +20,7 @@ constexpr int R = int(Button::Right), L = int(Button::Left), D = int(Button::Dow
 const Step SCRIPT[] = {
     {NONE, 0}, {R, 100}, {NONE, 200},              // slide to Pictures (mid-slide frame)
     {C, 120}, {NONE, 200},                         // zoom into Pictures (mid-zoom frame)
-    {R, 0}, {D, 0}, {C, 0}, {C, 0},                // photo 5 -> viewer -> Back
+    {R, 0}, {D, 0}, {C, 0}, {L, 0}, {B, 0},        // photo 5 -> viewer, step left, B -> gallery
     {D, 0}, {C, 0},                                // bottom bar Back -> Home
     {R, 200}, {C, 300},                            // Settings
     {C, 0}, {D, 0}, {C, 0}, {D, 0}, {D, 0}, {C, 0}, {D, 0}, {C, 0},  // resolution, mirror, grid, 12h
