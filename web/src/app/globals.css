@@ -432,9 +432,9 @@ main {
 }
 
 .face-buttons button {
-  padding: 0;
   border-radius: 50%;
-  font-weight: 600;
+  font-weight: 700;
+  font-size: 1.1rem;
 }
 
 .face-a { grid-area: 1 / 2; } /* A upper right, B lower left, as on Nintendo controllers */
@@ -463,16 +463,36 @@ main {
   background: #000;
 }
 
+/* NES-style housing: a dark d-pad well inset in a light gray panel. */
 .dpad {
   display: grid;
-  grid-template: repeat(3, 48px) / repeat(3, 48px);
-  gap: 6px;
+  grid-template: repeat(3, 44px) / repeat(3, 44px);
+  gap: 4px;
+  padding: 10px;
+  border-radius: 10px;
+  background: #2b2d31;
+  box-shadow: 0 0 0 6px #c9cbcf, 0 0 0 7px #a9acb1;
+}
+
+/* Wii-style buttons: glossy white, soft gray rim, gray glyphs (like the Wii Remote). */
+.dpad button,
+.face-buttons button {
+  padding: 0;
+  color: #8a9099;
+  border: 1px solid #c9ccd1;
+  background: linear-gradient(#ffffff, #eceef1);
+  box-shadow: 0 2px 0 #b9bdc3, inset 0 1px 0 #ffffff;
 }
 
 .dpad button {
-  padding: 0;
-  font-size: 1.1rem;
-  border-radius: 12px;
+  border-radius: 10px;
+  font-size: 1rem;
+}
+
+.dpad button:active,
+.face-buttons button:active {
+  transform: translateY(1px);
+  box-shadow: 0 1px 0 #b9bdc3, inset 0 1px 0 #ffffff;
 }
 
 .dpad-up { grid-area: 1 / 2; }

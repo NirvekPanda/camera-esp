@@ -28,9 +28,8 @@ about the Wii Menu (sources at the end):
    just the picture under the nav bar, like a camera's live view.
 2. **One control model.** Arrows *only* move focus, spatially: through the content, then down into
    the bottom bar and back up. **Center and A activate** the focused element, and **B goes back**
-   (Nintendo's A = OK, B = Back). There are no other bindings. The Camera app follows camera
-   convention instead: **A takes a picture, B toggles the flash**, and Center is **MENU/OK**
-   (back to Home), as on point-and-shoot cameras whose center button is MENU/OK.
+   (Nintendo's A = OK, B = Back). There are no other bindings. In the Camera app, **Center is the
+   shutter, A toggles the flash and B goes back**, so B means Back on every screen.
 3. **One focus style.** A 3 px accent outline on whatever has focus: tiles, rows, thumbnails and
    buttons alike. Unfocused elements get a 1 px `line` outline.
 4. **Sensible first focus.** A page opens with its most likely action focused: the first row on
@@ -96,13 +95,18 @@ The Wii's pointer and big TV don't fit here. What changes:
   and the focused tile grows and gets the blue outline (the Wii hover). Page dots in the bottom bar
   show the position.
 - **Center** (or A) opens the focused page. On every page, **Back** is the bottom-left button (B
-  also goes back). The Pictures grid opens a photo in a **viewer**, whose only control is Back.
+  also goes back). The Pictures grid (which keeps its Back button) opens a photo with Center/A in a **full-screen
+  viewer**: just the photo and the nav bar with its file name. Left/Right step through the photos,
+  and B returns to the gallery.
   Settings change with Center, which toggles or cycles the value, because arrows never change
   values. The settings are Resolution, Mirror, Flip vertical, **Grid** (rule-of-thirds overlay on
   the camera), **Clock** (24h, or 12h with AM/PM in the nav bar) and About. Five rows are visible,
   and the list scrolls to keep focus in view.
-- **Camera:** a full-screen picture under the nav bar, with no buttons on screen. A takes a picture
-  (a white blink), B toggles the flash, and Center returns to Home.
+- **Camera:** a full-screen picture under the nav bar, with no buttons on screen. The nav bar shows
+  a small camera icon instead of a text title. Center takes a picture (a white blink), A toggles
+  the flash, and B goes back to Home.
+- **Emulator controls:** the d-pad sits in an NES-style housing (a dark well in a gray panel), and
+  the arrow and A/B buttons are Wii-style: glossy white, soft gray rim, gray glyphs.
 - **Emulator keyboard:** arrow keys move, **Space and Enter are Center**, and `a`/`b` (any case)
   are A and B. They work anywhere on the Device tab without clicking the display first, except
   while typing in a form control. Browser defaults are cancelled, so the page doesn't scroll and a
@@ -154,10 +158,10 @@ the primary action always bottom-right. `┏━┓` marks the focused element.
 └────────────────────────────────────────┘
 ```
 
-**Camera** (full screen: the picture and the nav bar only; A shoots, B flash, Center = MENU):
+**Camera** (full screen: the picture and the nav bar only; Center shoots, A flash, B back):
 ```
 ┌────────────────────────────────────────┐
-│ 2:23 PM  Camera              ⚡ 76% ▭▯ │  12h clock; flash icon beside the battery
+│ 2:23 PM  📷                  ⚡ 76% ▭▯ │  camera icon, no label; flash icon beside the battery
 ├────────────────────────────────────────┤
 │        │             │                 │
 │        │  live       │                 │  rule-of-thirds grid (Settings → Grid)
@@ -185,16 +189,14 @@ the primary action always bottom-right. `┏━┓` marks the focused element.
 └────────────────────────────────────────┘
 ```
 
-**Viewer** (the file name is the title; Back is the only control):
+**Viewer** (full screen like the camera; Left/Right step through photos, B back to the gallery):
 ```
 ┌────────────────────────────────────────┐
 │ 14:23  IMG_0002.jpg                ⭘USB│
 ├────────────────────────────────────────┤
-│  ╭──────────────────────────────────╮  │
-│  │               photo              │  │
-│  ╰──────────────────────────────────╯  │
-├────────────────────────────────────────┤
-│ ┏ Back ┓                               │
+│                                        │
+│                photo                   │
+│                                        │
 └────────────────────────────────────────┘
 ```
 

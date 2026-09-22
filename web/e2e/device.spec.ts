@@ -114,22 +114,24 @@ test("the display is centered, with the d-pad centered below it and A/B to its r
   expect(pad.y).toBeGreaterThan(screen.y + screen.height);
   expect(Math.abs(mid(pad) - mid(screen))).toBeLessThan(face.width); // the pad + A/B pair is centered
   expect(face.x).toBeGreaterThan(pad.x + pad.width);
+  const fontSize = (name: string) =>
+    page.getByRole("button", { name, exact: true }).evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+  expect(await fontSize("A")).toBeGreaterThan(await fontSize("Up")); // A/B labels are the larger face-button size
 });
 
-test("camera: A shoots, B lights the ring outside the display, Center returns home", async ({ page }) => {
+test("camera: Center shoots, A lights the ring outside the display, B goes back home", async ({ page }) => {
   await openDeviceTab(page);
   const frame = page.locator(".device-frame");
   await page.getByRole("button", { name: "Center" }).click(); // open Camera
   await expect.poll(() => pixel(page, 5, 60)).toEqual([255, 255, 255]); // camera picture shown (zoom done)
-  await page.getByRole("button", { name: "B", exact: true }).click();
+  await page.getByRole("button", { name: "A", exact: true }).click();
   await expect(frame).toHaveAttribute("data-flash", "on");
   await expect.poll(() => frame.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgb(255, 255, 255)");
-  await page.getByRole("button", { name: "A", exact: true }).click();
+  await page.getByRole("button", { name: "Center" }).click();
   await expect.poll(() => pixel(page, 120, 150)).toEqual([255, 255, 255]); // shutter blink on the panel
-  await page.locator(".device-screen").focus();
-  await page.keyboard.press("b"); // keys work too
+  await page.keyboard.press("a"); // keys work too
   await expect(frame).toHaveAttribute("data-flash", "off");
-  await page.getByRole("button", { name: "Center" }).click(); // MENU: back home
+  await page.keyboard.press("b"); // Back: home
   await page.getByRole("button", { name: "Right" }).click();
   await page.getByRole("button", { name: "Center" }).click();
   await expect.poll(() => pixel(page, 22, 48)).toEqual(FIRST_THUMB); // Pictures opened from home

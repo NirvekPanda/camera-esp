@@ -355,23 +355,34 @@ TEST(center_opens_page_after_zoom) {
   CHECK(ui.screen() == Screen::Camera);
 }
 
-TEST(camera_a_shoots_b_toggles_flash_center_is_menu) {
+TEST(camera_center_shoots_a_toggles_flash_b_goes_back) {
   Ui ui;
   openPage(ui, 0);
   int before = ui.photoCount();
-  ui.press(Button::A);
+  ui.press(Button::Center);  // the shutter
   CHECK_EQ(ui.photoCount(), before + 1);
-  CHECK(ui.animating());  // shutter flash
+  CHECK(ui.animating());  // shutter blink
   ui.tick(FLASH_MS);
   CHECK(!ui.flashOn());
-  ui.press(Button::B);
+  ui.press(Button::A);
   CHECK(ui.flashOn());
-  ui.press(Button::B);
+  ui.press(Button::A);
   CHECK(!ui.flashOn());
-  CHECK(ui.screen() == Screen::Camera);  // B doesn't leave the camera
-  ui.press(Button::Center);               // MENU/OK, as on point-and-shoot cameras
+  CHECK(ui.screen() == Screen::Camera);  // neither leaves the camera
+  ui.press(Button::B);                    // Back, as everywhere else
   CHECK(ui.screen() == Screen::Home);
   CHECK_EQ(ui.focus(), 0);  // back on the Camera tile
+}
+
+TEST(camera_title_is_an_icon_not_a_label) {
+  Ui camera, settings;
+  openPage(camera, 0);
+  openPage(settings, 2);
+  camera.render(fb);
+  CHECK(regionHas(fb, {60, 0, 40, 27}, color::ink));   // the icon after the clock
+  CHECK(!regionHas(fb, {100, 0, 80, 27}, color::ink)); // no "Camera" text beyond it
+  settings.render(fb2);
+  CHECK(regionHas(fb2, {100, 0, 40, 27}, color::ink)); // other pages keep their text title
 }
 
 TEST(camera_shows_only_picture_and_nav_bar) {
@@ -388,7 +399,7 @@ TEST(camera_grid_overlay) {
   openPage(ui, 0);
   ui.render(fb);
   CHECK(fb.at(WIDTH / 3, 60) != color::white);  // yellow bar, no grid
-  ui.press(Button::Center);                     // home, then Settings -> Grid
+  ui.press(Button::B);                          // home, then Settings -> Grid
   ui.press(Button::Right);
   ui.press(Button::Right);
   ui.press(Button::Center);
@@ -413,7 +424,7 @@ TEST(a_is_ok_and_b_is_back_outside_the_camera) {
   CHECK(ui.screen() == Screen::Pictures);
   ui.press(Button::A);  // opens the focused photo
   CHECK(ui.screen() == Screen::Viewer);
-  ui.press(Button::B);
+  ui.press(Button::B);  // the viewer has no Back button: B is the way back
   CHECK(ui.screen() == Screen::Pictures);
   ui.press(Button::B);
   CHECK(ui.screen() == Screen::Home);
@@ -444,9 +455,9 @@ TEST(twelve_hour_clock) {
 TEST(flash_is_only_active_inside_the_camera) {
   Ui ui;
   openPage(ui, 0);
-  ui.press(Button::B);
+  ui.press(Button::A);
   CHECK(ui.flashOn());
-  ui.press(Button::Center);  // home: the ring around the display must go dark
+  ui.press(Button::B);  // home: the ring around the display must go dark
   CHECK(!ui.flashOn());
   ui.press(Button::Center);
   ui.tick(OPEN_MS);
@@ -458,7 +469,7 @@ TEST(flash_icon_sits_with_the_status_icons) {
   openPage(ui, 0);
   ui.setLink(Link::Usb);
   ui.render(fb);
-  ui.press(Button::B);
+  ui.press(Button::A);
   ui.render(fb2);
   const Rect status = {WIDTH / 2, 0, WIDTH / 2, 27}, left = {0, 0, WIDTH / 2, 27};
   CHECK(regionHas(fb2, status, color::accent));  // top-right, beside the USB icon
@@ -471,7 +482,7 @@ TEST(flash_does_not_draw_on_the_picture) {
   Ui ui;
   openPage(ui, 0);
   ui.render(fb);
-  ui.press(Button::B);
+  ui.press(Button::A);
   ui.render(fb2);
   CHECK(sameRegion(fb, fb2, {0, 28, WIDTH, HEIGHT - 28}));
 }
@@ -479,7 +490,7 @@ TEST(flash_does_not_draw_on_the_picture) {
 TEST(arrows_never_change_settings_or_leave_pages) {
   Ui ui;
   openPage(ui, 0);
-  ui.press(Button::B);  // flash on; arrows mustn't change it either
+  ui.press(Button::A);  // flash on; arrows mustn't change it either
   bool flash = ui.flashOn();
   bool mirrored = ui.mirrored();
   int resolution = ui.resolution();
@@ -507,8 +518,10 @@ TEST(pictures_grid_bottom_bar_and_viewer) {
   CHECK_EQ(ui.focus(), 4);
   ui.press(Button::Center);  // Center activates the focused photo
   CHECK(ui.screen() == Screen::Viewer);
-  CHECK_EQ(ui.focus(), BACK);  // the viewer's only control
-  ui.press(Button::Center);
+  CHECK_EQ(ui.focus(), 4);  // the photo being viewed
+  ui.press(Button::Center);  // already open: nothing to activate
+  CHECK(ui.screen() == Screen::Viewer);
+  ui.press(Button::B);
   CHECK(ui.screen() == Screen::Pictures);
   CHECK_EQ(ui.focus(), 4);  // same photo still focused
   goBack(ui);
@@ -573,8 +586,8 @@ TEST(down_enters_a_partly_filled_row_before_the_bottom_bar) {
 TEST(no_flash_when_no_photo_is_taken) {
   Ui ui;
   openPage(ui, 0);
-  while (ui.photoCount() < MAX_PHOTOS) ui.press(Button::A), ui.tick(FLASH_MS);
-  ui.press(Button::A);  // storage full: nothing saved
+  while (ui.photoCount() < MAX_PHOTOS) ui.press(Button::Center), ui.tick(FLASH_MS);
+  ui.press(Button::Center);  // storage full: nothing saved
   CHECK_EQ(ui.photoCount(), MAX_PHOTOS);
   CHECK(!ui.animating());  // so no shutter flash either
 }
@@ -582,17 +595,57 @@ TEST(no_flash_when_no_photo_is_taken) {
 // The Back button is the same pixels in the same place on every page that has one.
 TEST(back_button_is_identical_on_every_page) {
   const Rect back = {0, 206, WIDTH / 2, HEIGHT - 206};
-  Ui pictures, settings, viewer;
+  Ui pictures, settings;
   openPage(pictures, 1);  // a photo focused: Back unfocused
   openPage(settings, 2);  // a row focused: Back unfocused
   pictures.render(fb);
   settings.render(fb2);
   CHECK(sameRegion(fb, fb2, back));
   CHECK(!regionHas(fb, back, color::accent));
-  openPage(viewer, 1);
-  viewer.press(Button::Center);  // viewer: Back is its only control, so it's focused
-  viewer.render(fb);
+  pictures.press(Button::Down);
+  pictures.press(Button::Down);  // below the grid: Back focused
+  pictures.render(fb);
   CHECK(regionHas(fb, back, color::accent));  // focused: the same blue outline as tiles
+}
+
+TEST(viewer_is_full_screen_and_arrows_step_through_photos) {
+  Ui ui;
+  openPage(ui, 1);
+  ui.press(Button::Right);
+  ui.press(Button::A);
+  CHECK(ui.screen() == Screen::Viewer);
+  ui.render(fb);
+  CHECK(!regionHas(fb, {0, 206, WIDTH, HEIGHT - 206}, color::bar));  // no bottom bar
+  CHECK_EQ(fb.at(120, 27), color::line);  // nav bar (file name) still there
+  ui.press(Button::Right);
+  CHECK_EQ(ui.focus(), 2);
+  ui.render(fb2);
+  CHECK(!sameRegion(fb, fb2, {0, 28, WIDTH, HEIGHT - 28}));  // a different photo
+  ui.press(Button::Right);
+  ui.press(Button::Right);
+  ui.press(Button::Right);
+  CHECK_EQ(ui.focus(), ui.photoCount() - 1);  // stops at the last photo
+  for (int i = 0; i < 10; i++) ui.press(Button::Left);
+  CHECK_EQ(ui.focus(), 0);  // and at the first
+  ui.press(Button::Up);
+  ui.press(Button::Down);
+  CHECK(ui.screen() == Screen::Viewer);  // up/down don't leave or change anything
+  CHECK_EQ(ui.focus(), 0);
+}
+
+TEST(settings_icon_is_a_gear) {
+  Ui ui;
+  ui.press(Button::Right);
+  ui.press(Button::Right);
+  ui.tick(FOCUS_MS);  // Settings tile centered at (120, 104)
+  ui.render(fb);
+  const int cx = 120, cy = 104;
+  CHECK_EQ(fb.at(cx, cy), color::tile);            // center hole
+  CHECK_EQ(fb.at(cx + 6, cy), color::ink);         // body
+  CHECK_EQ(fb.at(cx, cy - 11), color::ink);        // tooth, up
+  CHECK_EQ(fb.at(cx + 8, cy - 8), color::ink);     // tooth, up-right
+  CHECK_EQ(fb.at(cx + 4, cy - 11), color::tile);   // gap between teeth
+  CHECK_EQ(fb.at(cx + 11, cy + 4), color::tile);   // gap between teeth
 }
 
 TEST(no_hint_text_on_home) {

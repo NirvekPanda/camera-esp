@@ -20,14 +20,14 @@ constexpr int R = int(Button::Right), L = int(Button::Left), D = int(Button::Dow
 const Step SCRIPT[] = {
     {NONE, 0}, {R, 100}, {NONE, 200},              // slide to Pictures (mid-slide frame)
     {C, 120}, {NONE, 200},                         // zoom into Pictures (mid-zoom frame)
-    {R, 0}, {D, 0}, {C, 0}, {C, 0},                // photo 5 -> viewer -> Back
+    {R, 0}, {D, 0}, {C, 0}, {L, 0}, {B, 0},        // photo 5 -> viewer, step left, B -> gallery
     {D, 0}, {C, 0},                                // bottom bar Back -> Home
     {R, 200}, {C, 300},                            // Settings
     {C, 0}, {D, 0}, {C, 0}, {D, 0}, {D, 0}, {C, 0}, {D, 0}, {C, 0},  // resolution, mirror, grid, 12h
     {D, 0}, {D, 0}, {U, 0}, {D, 0},                // scrolled list, reach Back
     {C, 0}, {L, 50}, {L, 200}, {C, 300},           // Home -> Camera (grid on)
-    {A, 60}, {NONE, 200},                          // shoot (mid-flash frame)
-    {B, 0}, {C, 0},                                // flash on, MENU -> Home
+    {C, 60}, {NONE, 200},                          // shoot (mid-blink frame)
+    {A, 0}, {B, 0},                                // flash on, B -> Home
 };
 
 ui::Framebuffer fb;

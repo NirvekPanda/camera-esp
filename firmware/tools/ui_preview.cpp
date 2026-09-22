@@ -88,7 +88,7 @@ int main() {
   pictures.press(Button::Right);
   show(pictures, "pictures", "Pictures");
   pictures.press(Button::Center);
-  show(pictures, "viewer", "Viewer (Back focused: its only control)");
+  show(pictures, "viewer", "Viewer (full screen; Left/Right step, B back)");
   Ui settings = opened(2, Link::Usb);
   show(settings, "settings", "Settings");
   for (int i = 0; i < 3; i++) settings.press(Button::Down);
@@ -102,7 +102,7 @@ int main() {
   settings.press(Button::Center);
   settings.tick(OPEN_MS);
   settings.setLink(Link::Battery, 76);
-  settings.press(Button::B);  // flash on
+  settings.press(Button::A);  // flash on
   show(settings, "camera", "Camera (full screen, grid, flash on, 12-hour, battery 76%)");
   return 0;
 }
