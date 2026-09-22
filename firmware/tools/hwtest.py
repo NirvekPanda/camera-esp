@@ -15,8 +15,8 @@ import serial
 from serial.tools import list_ports
 
 MAGIC = b"\xa5\x5a"
-FRAME, CAPTURED, FILE_LIST, FILE_DATA, OK, ERROR = 0x01, 0x02, 0x03, 0x04, 0x05, 0x7F
-SET_TIME, CAPTURE, LIST, GET_FILE, STREAM, MIRROR, RESOLUTION, FPS, VFLIP = range(0x81, 0x8A)
+FRAME, CAPTURED, FILE_LIST, FILE_DATA, OK, PIXELS, ERROR = 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x7F
+SET_TIME, CAPTURE, LIST, GET_FILE, STREAM, MIRROR, RESOLUTION, FPS, VFLIP, PHOTO_PIXELS = range(0x81, 0x8B)
 USB_VENDOR_IDS = {0x303A, 0x2886}  # Espressif USB Serial/JTAG, Seeed
 
 # (requested, expected sensor frame): 480x480 and 720x720 arrive as VGA/HD for the site to crop.
@@ -147,8 +147,8 @@ def main():
     def photos():
         photo = json.loads(cam.request(CAPTURE, expect=CAPTURED))
         names = [f["name"] for f in json.loads(cam.request(LIST, expect=FILE_LIST))]
-        if photo["name"] not in names:
-            raise AssertionError(f"{photo['name']} missing from LIST")
+        if not names or names[0] != photo["name"]:
+            raise AssertionError(f"{photo['name']} isn't first in LIST (newest first): {names[:3]}")
         data = cam.request(GET_FILE, photo["name"].encode(), expect=FILE_DATA, timeout=30)
         if len(data) != photo["size"] or not data.startswith(b"\xff\xd8"):
             raise AssertionError("downloaded photo doesn't match")
@@ -158,6 +158,24 @@ def main():
             raise AssertionError(f"photo is {size[0]}x{size[1]}, not the sensor's full resolution")
         return f"{photo['name']} {size[0]}x{size[1]} ({photo['size'] // 1024} KB), {len(names)} on card"
     check("capture → list → download", photos)
+
+    def decoded_on_device():
+        # The device UI's Pictures page (thumbnails, viewer) decodes photos from the SD card itself.
+        name = json.loads(cam.request(LIST, expect=FILE_LIST))[0]["name"]
+        for w, h in ((64, 64), (240, 212)):
+            data = cam.request(PHOTO_PIXELS, struct.pack("<HH", w, h) + name.encode(), expect=PIXELS, timeout=30)
+            if struct.unpack_from("<HH", data) != (w, h) or len(data) != 4 + w * h * 2:
+                raise AssertionError(f"{w}x{h}: got {len(data)} bytes")
+            pixels = struct.unpack_from(f"<{w * h}H", data, 4)
+            if len(set(pixels)) < 8:
+                raise AssertionError(f"{w}x{h}: {len(set(pixels))} distinct colors, looks undecoded")
+            # Photos are smooth; byte-swapped or garbled RGB565 is noise (measured: ~1 vs ~10+).
+            green = [(p >> 5) & 63 for p in pixels]
+            rough = sum(abs(green[i] - green[i + 1]) for i in range(len(green) - 1) if (i + 1) % w) / len(green)
+            if rough > 3:
+                raise AssertionError(f"{w}x{h}: pixels look scrambled (roughness {rough:.1f}, byte order?)")
+        return f"{name} → 64×64 and 240×212 RGB565"
+    check("SD photo decoded on the device", decoded_on_device)
     check("stream off", lambda: cam.request(STREAM, b"\x00") and None)
 
     print("\nAll checks passed." if not failures else f"\n{failures} check(s) failed.")

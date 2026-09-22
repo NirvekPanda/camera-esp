@@ -418,11 +418,15 @@ main {
   gap: 24px;
 }
 
-/* D-pad centered under the screen, A/B to its right. */
+/* NES-style controller body: one large rectangle holding the d-pad and A/B (Wii-style buttons). */
 .device-controls {
   display: flex;
   align-items: center;
-  gap: 40px;
+  gap: 36px;
+  padding: 18px 28px;
+  border-radius: 14px;
+  background: #c9cbcf;
+  box-shadow: inset 0 0 0 1px #a9acb1, 0 2px 0 #a9acb1;
 }
 
 .face-buttons {
@@ -463,15 +467,18 @@ main {
   background: #000;
 }
 
-/* NES-style housing: a dark d-pad well inset in a light gray panel. */
+/* Dark wells in the body, like the NES controller's black face. */
+.dpad,
+.face-buttons {
+  padding: 10px;
+  border-radius: 10px;
+  background: #2b2d31;
+}
+
 .dpad {
   display: grid;
   grid-template: repeat(3, 44px) / repeat(3, 44px);
   gap: 4px;
-  padding: 10px;
-  border-radius: 10px;
-  background: #2b2d31;
-  box-shadow: 0 0 0 6px #c9cbcf, 0 0 0 7px #a9acb1;
 }
 
 /* Wii-style buttons: glossy white, soft gray rim, gray glyphs (like the Wii Remote). */

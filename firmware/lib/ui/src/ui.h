@@ -3,6 +3,7 @@
 #include <stdint.h>
 
 #include "framebuffer.h"
+#include "photos.h"
 
 namespace ui {
 
@@ -16,12 +17,15 @@ constexpr uint32_t OPEN_MS = 250;      // tile zoom into a page
 constexpr uint32_t FLASH_MS = 150;     // shutter flash
 constexpr int SETTING_COUNT = 6;       // Resolution, Mirror, Flip vertical, Grid, Clock, About
 constexpr int RESOLUTION_COUNT = 9;    // matches RESOLUTIONS in web/src/lib/camera/settings.ts
-constexpr int MAX_PHOTOS = 99;
 
 // The camera's picture area, under the nav bar: live preview frames are this size (RGB565).
 constexpr int PREVIEW_Y = 28;
 constexpr int PREVIEW_W = WIDTH;
 constexpr int PREVIEW_H = HEIGHT - PREVIEW_Y;
+
+// Pictures grid thumbnails are THUMB_SIZE x THUMB_SIZE (PhotoLibrary::pixels is asked for this
+// size and for PREVIEW_W x PREVIEW_H in the viewer).
+constexpr int THUMB_SIZE = 64;
 
 // focus() values for the bottom bar, which is in the same place on every page:
 // Back bottom-left, the page's primary action (if any) bottom-right.
@@ -41,7 +45,18 @@ class Ui {
   void render(Framebuffer& fb) const;
 
   void setTime(int minutesSinceMidnight) { minutes_ = minutesSinceMidnight % (24 * 60); }
-  void setDate(int year, int month, int day) { today_ = {int16_t(year), int8_t(month), int8_t(day), 0}; }
+  // The photos on the SD card (Pictures page and viewer); nullptr shows no photos.
+  void setLibrary(PhotoLibrary* library) { library_ = library; }
+  // Call after the library's contents change: focus follows the same photo (by name), or moves to
+  // one that still exists.
+  void libraryChanged();
+  // Shutter presses since the last call: the host takes the photos (on the SD card) and refreshes
+  // the library, so a new photo appears once it's saved.
+  int takeCaptureRequests() {
+    int n = captureRequests_;
+    captureRequests_ = 0;
+    return n;
+  }
   // Live camera frame for the Camera app (PREVIEW_W x PREVIEW_H RGB565, row-major), or nullptr
   // for none: the app then shows color bars. The caller keeps the buffer alive and current.
   void setPreview(const uint16_t* pixels) { preview_ = pixels; }
@@ -53,7 +68,7 @@ class Ui {
   Screen screen() const { return screen_; }
   int focus() const;  // focused tile / photo / setting, or BACK / PRIMARY
   bool animating() const { return focusT_ < FOCUS_MS || openT_ < OPEN_MS || flashT_ < FLASH_MS; }
-  int photoCount() const { return photos_; }
+  int photoCount() const { return library_ ? library_->count() : 0; }
   int resolution() const { return resolution_; }  // index into RESOLUTIONS
   bool mirrored() const { return mirrored_; }
   bool vflipped() const { return vflipped_; }
@@ -64,11 +79,6 @@ class Ui {
 
  private:
   void renderNavBar(Framebuffer& fb, const char* title) const;
-  struct Shot {  // when a photo was taken
-    int16_t year;
-    int8_t month, day;
-    int16_t minutes;
-  };
   void renderBottomBar(Framebuffer& fb, int focus, const char* primary) const;
   void renderHome(Framebuffer& fb) const;
   void renderCamera(Framebuffer& fb) const;
@@ -81,6 +91,8 @@ class Ui {
   void activate();
   void back();
   void open(Screen page);
+  void clampPhotoFocus();
+  void rememberPhoto();
 
   Screen screen_ = Screen::Home;
   int minutes_ = 0;
@@ -94,15 +106,14 @@ class Ui {
   uint32_t openT_ = OPEN_MS;
 
   uint32_t flashT_ = FLASH_MS;
-  int photos_ = 5, photoFocus_ = 0;  // stays on the viewed photo while the viewer is open
+  int photoFocus_ = 0;  // stays on the viewed photo while the viewer is open
   int lastPhoto_ = 0;  // where focus left the grid: reopening Pictures and Up from Back return here
   int settingFocus_ = 0, resolution_ = RESOLUTION_COUNT - 1;  // 1920x1080, the site's default
   bool mirrored_ = false, vflipped_ = false, grid_ = false, clock12_ = false, flash_ = false;
   const uint16_t* preview_ = nullptr;
-  Shot today_ = {2026, 1, 1, 0};  // date from setDate; minutes come from minutes_
-  // The demo photos' times; new photos record the time they're taken.
-  Shot shots_[MAX_PHOTOS] = {{2026, 6, 21, 9 * 60 + 5},  {2026, 6, 21, 10 * 60 + 30}, {2026, 6, 20, 12 * 60 + 15},
-                             {2026, 6, 18, 15 * 60 + 45}, {2026, 6, 14, 18 * 60 + 20}};
+  PhotoLibrary* library_ = nullptr;
+  int captureRequests_ = 0;
+  char focusedPhoto_[PHOTO_NAME_MAX] = {};  // name of photoFocus_'s photo, to find it again
 };
 
 // "June, 21, 2026" if it fits in maxWidth px, else "Jun, 21, 2026", else "Jun, 21".

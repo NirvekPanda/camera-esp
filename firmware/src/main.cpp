@@ -9,6 +9,7 @@
 #include "camera_pins.h"
 #include "jpeg.h"
 #include "protocol.h"
+#include "sd_photo_library.h"
 
 using namespace protocol;
 
@@ -48,6 +49,7 @@ bool streaming = false;
 uint32_t frameIntervalMs = 1000 / 15;
 uint32_t lastFrameMs = 0;
 Parser parser;
+SdPhotoLibrary library;
 
 // Frame buffers are sized at init for `size`: it must be the largest size the sensor will use.
 bool startCamera(framesize_t size) {
@@ -182,20 +184,34 @@ void capture() {
 }
 
 void listPhotos() {
-  if (!sdReady) return sendError("No SD card");
-  File dir = SD.open(PHOTO_DIR);
+  if (!sdReady || !library.refresh()) return sendError("No SD card");
   String json = "[";
-  for (File file = dir.openNextFile(); file; file = dir.openNextFile()) {
-    String name = file.name();
-    // Only our own names, which need no JSON escaping.
-    if (!file.isDirectory() && name.endsWith(".jpg") && name.indexOf('"') < 0 && name.indexOf('\\') < 0) {
-      if (json.length() > 1) json += ',';
-      json += "{\"name\":\"" + name + "\",\"size\":" + file.size() + "}";
-    }
-    file.close();
+  for (int i = 0; i < library.count(); i++) {  // newest first
+    if (i) json += ',';
+    json += "{\"name\":\"" + String(library.name(i)) + "\",\"size\":" + library.size(i) + "}";
   }
-  dir.close();
   send(FILE_LIST, json + "]");
+}
+
+// A photo decoded on the device, center-cropped and scaled: what the device UI shows (thumbnails
+// and the viewer), and how the emulator gets the same pixels. Reply: u16 w, u16 h, RGB565 LE.
+void sendPhotoPixels(const uint8_t* payload, uint32_t length) {
+  if (!sdReady) return sendError("No SD card");
+  if (length < 5) return sendError("PHOTO_PIXELS needs a width, a height and a name");
+  const uint16_t w = readU16(payload), h = readU16(payload + 2);
+  const char* name = reinterpret_cast<const char*>(payload + 4);  // NUL-terminated by the parser
+  if (w == 0 || h == 0 || w > 240 || h > 240 || strchr(name, '/')) return sendError("Invalid PHOTO_PIXELS request");
+  const size_t bytes = size_t(w) * h * 2;
+  uint16_t* pixels = static_cast<uint16_t*>(heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM));
+  if (!pixels || !SdPhotoLibrary::decode(name, w, h, pixels)) {
+    free(pixels);
+    return sendError(String("Couldn't read ") + name);
+  }
+  const uint8_t size[4] = {uint8_t(w), uint8_t(w >> 8), uint8_t(h), uint8_t(h >> 8)};
+  writeHeader(PIXELS, 4 + bytes);
+  Serial.write(size, sizeof size);
+  Serial.write(reinterpret_cast<const uint8_t*>(pixels), bytes);  // ESP32 is little-endian
+  free(pixels);
 }
 
 void sendFile(const char* name) {
@@ -232,6 +248,8 @@ void handle(uint8_t type, const uint8_t* payload, uint32_t length) {
       return listPhotos();
     case GET_FILE:
       return sendFile(reinterpret_cast<const char*>(payload));
+    case PHOTO_PIXELS:
+      return sendPhotoPixels(payload, length);
   }
 
   // The rest need the camera.

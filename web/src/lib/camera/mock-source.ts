@@ -1,4 +1,5 @@
 import { duplicateName, photoName } from "../filename";
+import { imageToRgb565 } from "../rgb565";
 import { DEFAULT_FPS, DEFAULT_RESOLUTION, coverCrop, type Resolution } from "./settings";
 import type { CameraSource, FileEntry, FrameListener } from "./types";
 
@@ -116,6 +117,10 @@ export class MockSource implements CameraSource {
 
   async listFiles(): Promise<FileEntry[]> {
     return [...sdCard].map(([name, blob]) => ({ name, size: blob.size }));
+  }
+
+  async getPixels(name: string, width: number, height: number) {
+    return imageToRgb565(await this.getFile(name), width, height);
   }
 
   async getFile(name: string) {

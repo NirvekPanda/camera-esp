@@ -2,6 +2,7 @@
 
 #include "../lib/ui/src/st7789_emulator.h"
 #include "../lib/ui/src/ui.h"
+#include "fake_library.h"
 
 namespace golden {
 namespace {
@@ -32,11 +33,13 @@ const Step SCRIPT[] = {
 
 ui::Framebuffer fb;
 ui::St7789Emulator panel;
+FakeLibrary photos(5);
 
 }  // namespace
 
 uint32_t run() {
   ui::Ui device;
+  device.setLibrary(&photos);
   device.setTime(14 * 60 + 23);
   device.setLink(ui::Link::Usb);
   ui::st7789::init(panel);  // SWRESET; the first full-frame flush overwrites panel memory

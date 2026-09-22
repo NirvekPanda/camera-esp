@@ -13,6 +13,7 @@ export const PacketType = {
   FILE_LIST: 0x03,
   FILE_DATA: 0x04,
   OK: 0x05,
+  PIXELS: 0x06,
   ERROR: 0x7f,
   // site → ESP
   SET_TIME: 0x81,
@@ -24,6 +25,7 @@ export const PacketType = {
   RESOLUTION: 0x87,
   FPS: 0x88,
   VFLIP: 0x89,
+  PHOTO_PIXELS: 0x8a,
 } as const;
 
 export interface Packet {

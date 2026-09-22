@@ -15,7 +15,7 @@ constexpr int FOCUS_STROKE = 3;  // the one focus style: a blue outline, on ever
 // Home row
 constexpr int TILE = 56, TILE_FOCUSED = 64, TILE_PITCH = 76, ROW_Y = 104, TILE_RADIUS = 14;
 // Pictures grid: 3 per row, 2 rows visible
-constexpr int COLS = 3, THUMB = 64, THUMB_PITCH = 74, GRID_X = 12, GRID_Y = 38;
+constexpr int COLS = 3, THUMB = THUMB_SIZE, THUMB_PITCH = 74, GRID_X = 12, GRID_Y = 38;
 // Settings rows: 5 visible, the list scrolls to keep focus in view
 constexpr int ROW_H = 30, ROW_PITCH = 34, ROWS_Y = 34, VISIBLE_ROWS = 5;
 
@@ -26,8 +26,6 @@ const char* const RESOLUTIONS[RESOLUTION_COUNT] = {
     "800x600", "1280x720", "1600x1200", "1920x1080"};
 const uint16_t BARS[] = {color::white, rgb565(0xFF, 0xFF, 0), rgb565(0, 0xFF, 0xFF), rgb565(0, 0xFF, 0),
                          rgb565(0xFF, 0, 0xFF), rgb565(0xFF, 0, 0), rgb565(0, 0, 0xFF)};
-const uint16_t THUMB_COLORS[] = {rgb565(0x8E, 0xC5, 0xE8), rgb565(0xF2, 0xB8, 0x8B), rgb565(0xA8, 0xD8, 0x9E),
-                                 rgb565(0xD7, 0xB4, 0xE8), rgb565(0xF0, 0xD9, 0x8C)};
 constexpr uint16_t LOW_BATTERY = rgb565(0xE5, 0x48, 0x4D);
 const char* const MONTHS[12] = {"January", "February", "March",     "April",   "May",      "June",
                                 "July",    "August",   "September", "October", "November", "December"};
@@ -121,12 +119,6 @@ void outline(Framebuffer& fb, Rect r, int radius, bool focused) {
   fb.strokeRoundRect(r, radius, focused ? FOCUS_STROKE : 1, focused ? color::accent : color::line);
 }
 
-void photoPlaceholder(Framebuffer& fb, Rect r, int index, int radius) {  // a sun over a hill
-  fb.fillRoundRect(r, radius, THUMB_COLORS[index % 5]);
-  fb.fillCircle(r.x + r.w * 72 / 100, r.y + r.h * 28 / 100, r.w / 9, color::tile);
-  fb.fillRoundRect({r.x + r.w / 10, r.y + r.h * 6 / 10, r.w * 8 / 10, r.h * 3 / 10}, r.h / 8, color::tile);
-}
-
 }  // namespace
 
 // Tries "June, 21, 2026", then "Jun, 21, 2026", then "Jun, 21" until one fits.
@@ -173,9 +165,8 @@ void Ui::press(Button b) {
 }
 
 void Ui::pressCamera(Button b) {
-  if (b == Button::Center && photos_ < MAX_PHOTOS) {  // shutter; the blink confirms a saved photo
-    shots_[photos_] = {today_.year, today_.month, today_.day, int16_t(minutes_)};
-    photos_++;
+  if (b == Button::Center) {  // shutter: the host saves the photo to the SD card
+    captureRequests_++;
     flashT_ = 0;
   }
   if (b == Button::A) flash_ = !flash_;
@@ -202,30 +193,35 @@ void Ui::pressHome(Button b) {
 // (Back left, primary right) and back up. They never change a value or leave the page.
 void Ui::pressPage(Button b) {
   switch (screen_) {
-    case Screen::Pictures:
+    case Screen::Pictures: {
+      const int photos = photoCount();
+      if (photoFocus_ >= photos) photoFocus_ = photos > 0 ? photos - 1 : BACK;  // the card changed
       if (photoFocus_ == BACK) {
-        if (b == Button::Up && photos_ > 0) photoFocus_ = lastPhoto_;
+        if (b == Button::Up && photos > 0) photoFocus_ = lastPhoto_ < photos ? lastPhoto_ : photos - 1;
       } else if (b == Button::Left && photoFocus_ % COLS > 0) {
         photoFocus_--;
-      } else if (b == Button::Right && photoFocus_ % COLS < COLS - 1 && photoFocus_ + 1 < photos_) {
+      } else if (b == Button::Right && photoFocus_ % COLS < COLS - 1 && photoFocus_ + 1 < photos) {
         photoFocus_++;
       } else if (b == Button::Down) {
         // Into the next row (its last photo if it's shorter), and only past the last row to Back.
-        bool lastRow = photoFocus_ / COLS == (photos_ - 1) / COLS;
-        photoFocus_ = lastRow ? BACK : (photoFocus_ + COLS < photos_ ? photoFocus_ + COLS : photos_ - 1);
+        bool lastRow = photoFocus_ / COLS == (photos - 1) / COLS;
+        photoFocus_ = lastRow ? BACK : (photoFocus_ + COLS < photos ? photoFocus_ + COLS : photos - 1);
       } else if (b == Button::Up && photoFocus_ >= COLS) {
         photoFocus_ -= COLS;
       }
       if (photoFocus_ != BACK) lastPhoto_ = photoFocus_;
+      rememberPhoto();
       return;
+    }
     case Screen::Settings:
       if (b == Button::Down) settingFocus_ = settingFocus_ == BACK || settingFocus_ == SETTING_COUNT - 1 ? BACK : settingFocus_ + 1;
       if (b == Button::Up) settingFocus_ = settingFocus_ == BACK ? SETTING_COUNT - 1 : settingFocus_ > 0 ? settingFocus_ - 1 : 0;
       return;
     default:  // Viewer: Left/Right step through the photos
       if (b == Button::Left && photoFocus_ > 0) photoFocus_--;
-      if (b == Button::Right && photoFocus_ < photos_ - 1) photoFocus_++;
+      if (b == Button::Right && photoFocus_ < photoCount() - 1) photoFocus_++;
       lastPhoto_ = photoFocus_;
+      rememberPhoto();
       return;
   }
 }
@@ -233,6 +229,7 @@ void Ui::pressPage(Button b) {
 // Center/A activate whatever is focused, on every page.
 void Ui::activate() {
   if (screen_ == Screen::Viewer) return;  // the focused photo is already open
+  if (screen_ == Screen::Pictures) clampPhotoFocus();  // the card may have changed
   if (focus() == BACK) return back();
   switch (screen_) {
     case Screen::Pictures:
@@ -254,7 +251,44 @@ void Ui::activate() {
 void Ui::open(Screen page) {
   screen_ = page;
   if (page == Screen::Settings) settingFocus_ = 0;
-  if (page == Screen::Pictures) photoFocus_ = lastPhoto_;
+  if (page == Screen::Pictures) {
+    photoFocus_ = lastPhoto_;
+    clampPhotoFocus();
+  }
+}
+
+// Keeps focus on a photo that exists, or Back when there are none.
+void Ui::clampPhotoFocus() {
+  const int photos = photoCount();
+  if (photos == 0) photoFocus_ = BACK;
+  else if (photoFocus_ >= photos) photoFocus_ = photos - 1;
+  else if (photoFocus_ == BACK && screen_ == Screen::Viewer) photoFocus_ = 0;
+  if (photoFocus_ != BACK) lastPhoto_ = photoFocus_;
+  rememberPhoto();
+}
+
+void Ui::rememberPhoto() {
+  if (photoFocus_ == BACK || photoFocus_ >= photoCount()) return;
+  const char* name = library_->name(photoFocus_);
+  int k = 0;
+  for (; k < PHOTO_NAME_MAX - 1 && name[k]; k++) focusedPhoto_[k] = name[k];
+  focusedPhoto_[k] = 0;
+}
+
+void Ui::libraryChanged() {
+  const int photos = photoCount();
+  for (int i = 0; i < photos && focusedPhoto_[0]; i++) {
+    const char* name = library_->name(i);
+    int k = 0;
+    while (name[k] && name[k] == focusedPhoto_[k]) k++;
+    if (name[k] == focusedPhoto_[k]) {  // same photo, maybe at a new position
+      if (photoFocus_ != BACK) photoFocus_ = i;
+      lastPhoto_ = i;
+      return;
+    }
+  }
+  if (screen_ == Screen::Viewer && photos == 0) screen_ = Screen::Pictures;  // the photo is gone
+  clampPhotoFocus();
 }
 
 void Ui::tick(uint32_t ms) {
@@ -316,9 +350,12 @@ void Ui::renderNavBar(Framebuffer& fb, const char* title) const {
   if (link_ == Link::Battery) right = drawBattery(fb, WIDTH - 6, BAR_H / 2, battery_) - 8;
   if (flashOn()) right = drawFlash(fb, right, BAR_H / 2) - 8;
 
-  // The viewer shows when the photo was taken: its time here and its date as the title.
-  const Shot* shot = screen_ == Screen::Viewer ? &shots_[photoFocus_] : nullptr;
-  int minutes = shot ? shot->minutes : minutes_;
+  // The viewer shows when the photo was taken (from its YYYYMMDD-HHMMSS name): its time here and
+  // its date as the title. Other names are shown as they are, next to the current time.
+  const char* photo = screen_ == Screen::Viewer && photoFocus_ < photoCount() ? library_->name(photoFocus_) : nullptr;
+  int year = 0, month = 0, day = 0, taken = 0;
+  bool dated = photo && parsePhotoTime(photo, year, month, day, taken);
+  int minutes = dated ? taken : minutes_;
   int hour = minutes / 60;
   char clock[6], *p = clock;
   if (clock12_) {  // 12-hour: no leading zero, 0 and 12 read as 12
@@ -333,11 +370,13 @@ void Ui::renderNavBar(Framebuffer& fb, const char* title) const {
   int x = fb.drawText(fonts::large, 8, 1, clock, color::text);
   if (clock12_) x = fb.drawText(fonts::small, x + 3, 9, hour < 12 ? "AM" : "PM", color::text);
   if (title) fb.drawText(fonts::small, x + 10, 6, title, color::ink);
-  if (shot) {
+  if (dated) {
     int dash = fb.drawText(fonts::small, x + 10, 6, "-", color::ink) + 5;
     char date[24];
-    photoDate(date, shot->year, shot->month, shot->day, right - dash);
+    photoDate(date, year, month, day, right - dash);
     fb.drawText(fonts::small, dash, 6, date, color::ink);
+  } else if (photo) {
+    fb.drawText(fonts::small, x + 10, 6, photo, color::ink);
   }
   if (screen_ == Screen::Camera) {  // small camera icon in place of a title
     int ix = x + 10, iy = 8;
@@ -399,11 +438,25 @@ void Ui::renderCamera(Framebuffer& fb) const {
 }
 
 void Ui::renderPictures(Framebuffer& fb) const {
-  int row = photoFocus_ == BACK ? (photos_ - 1) / COLS : photoFocus_ / COLS;
+  const int photos = photoCount();
+  if (photos == 0) {
+    const char* empty = "No photos";
+    fb.drawText(fonts::small, (WIDTH - Framebuffer::textWidth(fonts::small, empty)) / 2, 100, empty, color::text);
+    return;
+  }
+  static uint16_t thumb[THUMB * THUMB];
+  int focus = photoFocus_ < photos ? photoFocus_ : photos - 1;
+  int row = photoFocus_ == BACK ? (photos - 1) / COLS : focus / COLS;
   int top = row > 0 ? row - 1 : 0;  // keep the focused row visible
-  for (int i = top * COLS; i < photos_ && i < (top + 2) * COLS; i++) {
+  for (int i = top * COLS; i < photos && i < (top + 2) * COLS; i++) {
     Rect r = {GRID_X + (i % COLS) * THUMB_PITCH, GRID_Y + (i / COLS - top) * THUMB_PITCH, THUMB, THUMB};
-    photoPlaceholder(fb, r, i, 10);
+    if (library_->pixels(i, THUMB, THUMB, thumb)) {
+      for (int y = 0; y < THUMB; y++)
+        for (int x = 0; x < THUMB; x++) fb.pixels[(r.y + y) * WIDTH + r.x + x] = thumb[y * THUMB + x];
+      fb.maskRoundRect(r, 10, color::bg);
+    } else {
+      fb.fillRoundRect(r, 10, color::tile);  // still loading
+    }
     outline(fb, r, 10, i == photoFocus_);
   }
 }
@@ -427,7 +480,11 @@ void Ui::renderSettings(Framebuffer& fb) const {
 }
 
 void Ui::renderViewer(Framebuffer& fb) const {  // full screen, like the camera
-  photoPlaceholder(fb, {0, BAR_H + 1, WIDTH, HEIGHT - BAR_H - 1}, photoFocus_, 0);
+  // The picture area is PREVIEW_W x PREVIEW_H contiguous framebuffer rows: decode straight into it.
+  uint16_t* area = fb.pixels + PREVIEW_Y * WIDTH;
+  if (photoFocus_ >= photoCount() || !library_->pixels(photoFocus_, PREVIEW_W, PREVIEW_H, area)) {
+    fb.fillRect({0, PREVIEW_Y, PREVIEW_W, PREVIEW_H}, color::bg);  // still loading
+  }
 }
 
 }  // namespace ui
