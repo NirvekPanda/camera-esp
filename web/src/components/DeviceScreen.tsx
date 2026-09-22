@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useCamera } from "@/context/camera-context";
 import {
   Button,
@@ -19,6 +19,10 @@ const PAD = [
   { button: Button.Right, label: "Right", symbol: "▶" },
   { button: Button.Down, label: "Down", symbol: "▼" },
 ];
+const FACE = [
+  { button: Button.A, label: "A" },
+  { button: Button.B, label: "B" },
+];
 
 /** The camera's 240×240 display, emulated: the device UI in WebAssembly driving a virtual ST7789. */
 export function DeviceScreen() {
@@ -27,6 +31,7 @@ export function DeviceScreen() {
   const uiRef = useRef<DeviceUi | null>(null);
   const linkRef = useRef<number>(Link.None);
   const [error, setError] = useState<string | null>(null);
+  const [flash, setFlash] = useState(false);
   const linked = status === "connected" && source?.kind === "serial";
 
   useEffect(() => {
@@ -49,6 +54,7 @@ export function DeviceScreen() {
         if (cancelled) return;
         uiRef.current = ui;
         let last = performance.now();
+        let flashOn = false;
         const draw = (now: number) => {
           const clock = new Date();
           ui.setTime(clock.getHours() * 60 + clock.getMinutes());
@@ -56,6 +62,7 @@ export function DeviceScreen() {
           // rAF's frame time can precede `last` on the first frame: clamp to 0..100 ms.
           rgb565ToRgba(ui.frame(Math.round(Math.min(Math.max(now - last, 0), 100))), image.data);
           ctx.putImageData(image, 0, 0);
+          if (ui.flashOn() !== flashOn) setFlash((flashOn = ui.flashOn())); // re-render only on change
           last = now;
           frame = requestAnimationFrame(draw);
         };
@@ -73,31 +80,50 @@ export function DeviceScreen() {
 
   const press = (button: number) => uiRef.current?.press(button);
 
-  function onKeyDown(e: KeyboardEvent) {
-    const button = KEY_TO_BUTTON[e.key];
-    if (button === undefined) return;
-    e.preventDefault();
-    press(button);
-  }
+  // Keys drive the device without clicking the display first. Input controls outside the emulator
+  // (the header's select and buttons) keep their own keys.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const button = KEY_TO_BUTTON[e.key];
+      const target = e.target as HTMLElement;
+      if (button === undefined || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (target.closest("input, select, textarea, button, [contenteditable]") && !target.closest(".device")) return;
+      e.preventDefault(); // no page scroll, and a focused pad button doesn't also click
+      uiRef.current?.press(button);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   return (
     <section className="device" aria-label="Device screen emulator">
       <div className="device-body">
-        <canvas
-          ref={canvasRef}
-          className="device-screen"
-          width={PANEL_SIZE}
-          height={PANEL_SIZE}
-          tabIndex={0}
-          aria-label="Device screen"
-          onKeyDown={onKeyDown}
-        />
-        <div className="dpad" role="group" aria-label="5-way switch">
-          {PAD.map(({ button, label, symbol }) => (
-            <button key={label} className={`dpad-${label.toLowerCase()}`} aria-label={label} onClick={() => press(button)}>
-              {symbol}
-            </button>
-          ))}
+        {/* The flash is a light ring around the display, outside the 240x240 panel. */}
+        <div className="device-frame" data-flash={flash ? "on" : "off"}>
+          <canvas
+            ref={canvasRef}
+            className="device-screen"
+            width={PANEL_SIZE}
+            height={PANEL_SIZE}
+            tabIndex={0}
+            aria-label="Device screen"
+          />
+        </div>
+        <div className="device-controls">
+          <div className="dpad" role="group" aria-label="5-way switch">
+            {PAD.map(({ button, label, symbol }) => (
+              <button key={label} className={`dpad-${label.toLowerCase()}`} aria-label={label} onClick={() => press(button)}>
+                {symbol}
+              </button>
+            ))}
+          </div>
+          <div className="face-buttons" role="group" aria-label="A and B buttons">
+            {FACE.map(({ button, label }) => (
+              <button key={label} className={`face-${label.toLowerCase()}`} onClick={() => press(button)}>
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
       {error && (

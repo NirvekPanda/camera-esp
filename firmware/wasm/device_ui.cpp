@@ -20,9 +20,9 @@ EMSCRIPTEN_KEEPALIVE void ui_init() {
   ui::st7789::init(panel);
 }
 
-// 0 up, 1 down, 2 left, 3 right, 4 center (ui::Button).
+// 0 up, 1 down, 2 left, 3 right, 4 center, 5 A, 6 B (ui::Button).
 EMSCRIPTEN_KEEPALIVE void ui_press(int button) {
-  if (button >= 0 && button <= int(ui::Button::Center)) device.press(ui::Button(button));
+  if (button >= 0 && button <= int(ui::Button::B)) device.press(ui::Button(button));
 }
 
 EMSCRIPTEN_KEEPALIVE void ui_set_time(int minutesSinceMidnight) { device.setTime(minutesSinceMidnight); }
@@ -43,6 +43,8 @@ EMSCRIPTEN_KEEPALIVE const uint16_t* ui_frame(int elapsedMs) {
 EMSCRIPTEN_KEEPALIVE int ui_screen() { return int(device.screen()); }
 EMSCRIPTEN_KEEPALIVE int ui_focus() { return device.focus(); }
 EMSCRIPTEN_KEEPALIVE int ui_animating() { return device.animating(); }
+// The flash is a light ring around the physical display, outside the panel: the page draws it.
+EMSCRIPTEN_KEEPALIVE int ui_flash() { return device.flashOn(); }
 
 // The scripted session from the native tests: must return golden::EXPECTED_HASH.
 EMSCRIPTEN_KEEPALIVE uint32_t ui_golden() { return golden::run(); }

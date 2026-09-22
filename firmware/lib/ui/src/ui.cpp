@@ -16,11 +16,11 @@ constexpr int FOCUS_STROKE = 3;  // the one focus style: a blue outline, on ever
 constexpr int TILE = 56, TILE_FOCUSED = 64, TILE_PITCH = 76, ROW_Y = 104, TILE_RADIUS = 14;
 // Pictures grid: 3 per row, 2 rows visible
 constexpr int COLS = 3, THUMB = 64, THUMB_PITCH = 74, GRID_X = 12, GRID_Y = 38;
-// Settings rows
-constexpr int ROW_H = 34, ROW_PITCH = 40, ROWS_Y = 36;
+// Settings rows: 5 visible, the list scrolls to keep focus in view
+constexpr int ROW_H = 30, ROW_PITCH = 34, ROWS_Y = 34, VISIBLE_ROWS = 5;
 
 const char* const PAGE_NAMES[PAGE_COUNT] = {"Camera", "Pictures", "Settings"};
-const char* const SETTING_LABELS[SETTING_COUNT] = {"Resolution", "Mirror", "Flip vertical", "About"};
+const char* const SETTING_LABELS[SETTING_COUNT] = {"Resolution", "Mirror", "Flip vertical", "Grid", "Clock", "About"};
 const char* const RESOLUTIONS[RESOLUTION_COUNT] = {
     "240x240", "480x480", "720x720", "320x240", "640x480",
     "800x600", "1280x720", "1600x1200", "1920x1080"};
@@ -62,7 +62,8 @@ void drawIcon(Framebuffer& fb, int page, int cx, int cy) {
   }
 }
 
-void drawUsb(Framebuffer& fb, int x, int cy) {  // USB trident, pointing right
+// Status icons draw right-aligned and return their left edge, so more can line up to their left.
+int drawUsb(Framebuffer& fb, int x, int cy) {  // USB trident, pointing right
   fb.fillCircle(x + 3, cy, 3, color::ink);
   fb.fillRect({x + 3, cy - 1, 18, 3}, color::ink);
   fb.fillRect({x + 20, cy - 3, 4, 7}, color::ink);
@@ -72,9 +73,18 @@ void drawUsb(Framebuffer& fb, int x, int cy) {  // USB trident, pointing right
   fb.fillRect({x + 12, cy, 2, 6}, color::ink);
   fb.fillRect({x + 12, cy + 4, 5, 2}, color::ink);
   fb.fillCircle(x + 17, cy + 5, 2, color::ink);
+  return x;
 }
 
-void drawBattery(Framebuffer& fb, int right, int cy, int percent) {
+int drawFlash(Framebuffer& fb, int right, int cy) {  // lightning bolt
+  int x = right - 11, y = cy - 8;
+  for (int r = 0; r < 7; r++) fb.fillRect({x + 7 - r / 2, y + r, 3, 1}, color::accent);      // upper stroke
+  fb.fillRect({x + 2, y + 7, 8, 2}, color::accent);                                          // kink
+  for (int r = 0; r < 7; r++) fb.fillRect({x + 6 - r / 2, y + 9 + r, 3, 1}, color::accent);  // lower stroke
+  return x;
+}
+
+int drawBattery(Framebuffer& fb, int right, int cy, int percent) {
   char label[5], *p = label;
   if (percent >= 100) *p++ = '1', p = twoDigits(p, 0);
   else p = twoDigits(p, percent < 0 ? 0 : percent);
@@ -85,7 +95,9 @@ void drawBattery(Framebuffer& fb, int right, int cy, int percent) {
   fb.fillRect({right - 3, cy - 3, 3, 6}, color::ink);
   int fill = (body.w - 4) * (percent > 100 ? 100 : percent) / 100;
   fb.fillRect({body.x + 2, body.y + 2, fill, body.h - 4}, percent < 20 ? LOW_BATTERY : color::accent);
-  fb.drawText(fonts::small, body.x - 4 - Framebuffer::textWidth(fonts::small, label), cy - fonts::small.height / 2, label, color::text);
+  int left = body.x - 4 - Framebuffer::textWidth(fonts::small, label);
+  fb.drawText(fonts::small, left, cy - fonts::small.height / 2, label, color::text);
+  return left;
 }
 
 // Outline shared by every focusable element (tiles, rows, thumbnails, bottom buttons).
@@ -115,7 +127,7 @@ int easeOut(uint32_t elapsed, uint32_t duration) {
 
 int Ui::focus() const {
   switch (screen_) {
-    case Screen::Camera: return cameraFocus_;
+    case Screen::Camera: return 0;  // nothing focusable: the camera is full-screen
     case Screen::Pictures: return photoFocus_;
     case Screen::Settings: return settingFocus_;
     case Screen::Viewer: return BACK;
@@ -126,16 +138,29 @@ int Ui::focus() const {
 void Ui::press(Button b) {
   if (openT_ < OPEN_MS) return;  // ignore input while a page is opening
   if (screen_ == Screen::Home) return pressHome(b);
-  if (b == Button::Center) return activate();
+  if (screen_ == Screen::Camera) return pressCamera(b);
+  if (b == Button::Center || b == Button::A) return activate();
+  if (b == Button::B) return back();
   pressPage(b);
 }
+
+void Ui::pressCamera(Button b) {
+  if (b == Button::A && photos_ < MAX_PHOTOS) {  // the flash only confirms a photo that was saved
+    photos_++;
+    flashT_ = 0;
+  }
+  if (b == Button::B) flash_ = !flash_;
+  if (b == Button::Center) screen_ = Screen::Home;  // MENU/OK, as on point-and-shoot cameras
+}
+
+void Ui::back() { screen_ = screen_ == Screen::Viewer ? Screen::Pictures : Screen::Home; }
 
 void Ui::pressHome(Button b) {
   if ((b == Button::Left && homeFocus_ > 0) || (b == Button::Right && homeFocus_ < PAGE_COUNT - 1)) {
     focusFrom_ = homeFocus_;
     homeFocus_ += b == Button::Right ? 1 : -1;
     focusT_ = 0;
-  } else if (b == Button::Center) {
+  } else if (b == Button::Center || b == Button::A) {
     opening_ = Screen(homeFocus_ + 1);
     openT_ = 0;
   }
@@ -145,10 +170,6 @@ void Ui::pressHome(Button b) {
 // (Back left, primary right) and back up. They never change a value or leave the page.
 void Ui::pressPage(Button b) {
   switch (screen_) {
-    case Screen::Camera:  // no focusable content: only the bottom bar
-      if (b == Button::Left) cameraFocus_ = BACK;
-      if (b == Button::Right) cameraFocus_ = PRIMARY;
-      return;
     case Screen::Pictures:
       if (photoFocus_ == BACK) {
         if (b == Button::Up && photos_ > 0) photoFocus_ = lastPhoto_;
@@ -174,19 +195,10 @@ void Ui::pressPage(Button b) {
   }
 }
 
-// Center activates whatever is focused, on every page.
+// Center/A activate whatever is focused, on every page.
 void Ui::activate() {
-  if (focus() == BACK) {
-    screen_ = screen_ == Screen::Viewer ? Screen::Pictures : Screen::Home;
-    return;
-  }
+  if (focus() == BACK) return back();
   switch (screen_) {
-    case Screen::Camera:  // PRIMARY: Shoot. The flash only confirms a photo that was actually saved.
-      if (photos_ < MAX_PHOTOS) {
-        photos_++;
-        flashT_ = 0;
-      }
-      return;
     case Screen::Pictures:
       screen_ = Screen::Viewer;
       return;
@@ -194,6 +206,8 @@ void Ui::activate() {
       if (settingFocus_ == 0) resolution_ = (resolution_ + 1) % RESOLUTION_COUNT;
       if (settingFocus_ == 1) mirrored_ = !mirrored_;
       if (settingFocus_ == 2) vflipped_ = !vflipped_;
+      if (settingFocus_ == 3) grid_ = !grid_;
+      if (settingFocus_ == 4) clock12_ = !clock12_;
       return;
     default:
       return;
@@ -203,7 +217,6 @@ void Ui::activate() {
 // Each page opens with its most likely action focused.
 void Ui::open(Screen page) {
   screen_ = page;
-  if (page == Screen::Camera) cameraFocus_ = PRIMARY;
   if (page == Screen::Settings) settingFocus_ = 0;
   if (page == Screen::Pictures) photoFocus_ = lastPhoto_;
 }
@@ -231,7 +244,7 @@ void Ui::render(Framebuffer& fb) const {
   const char* title = screen_ == Screen::Home ? nullptr : screen_ == Screen::Viewer ? name : PAGE_NAMES[int(screen_) - 1];
   renderNavBar(fb, title);
   switch (screen_) {
-    case Screen::Camera: return renderBottomBar(fb, cameraFocus_, "Shoot");
+    case Screen::Camera: return;  // full-screen picture: no bottom bar
     case Screen::Pictures: return renderBottomBar(fb, photoFocus_, nullptr);
     case Screen::Settings: return renderBottomBar(fb, settingFocus_, nullptr);
     case Screen::Viewer: return renderBottomBar(fb, BACK, nullptr);
@@ -260,13 +273,25 @@ void Ui::renderBottomBar(Framebuffer& fb, int focus, const char* primary) const 
 void Ui::renderNavBar(Framebuffer& fb, const char* title) const {
   fb.fillRect({0, 0, WIDTH, BAR_H}, color::bar);
   fb.fillRect({0, BAR_H, WIDTH, 1}, color::line);
-  char clock[6], *p = twoDigits(clock, minutes_ / 60);
+  int hour = minutes_ / 60;
+  char clock[6], *p = clock;
+  if (clock12_) {  // 12-hour: no leading zero, 0 and 12 read as 12
+    int h12 = hour % 12 == 0 ? 12 : hour % 12;
+    if (h12 >= 10) *p++ = '1';
+    *p++ = char('0' + h12 % 10);
+  } else {
+    p = twoDigits(p, hour);
+  }
   *p++ = ':';
   *twoDigits(p, minutes_ % 60) = 0;
   int x = fb.drawText(fonts::large, 8, 1, clock, color::text);
+  if (clock12_) x = fb.drawText(fonts::small, x + 3, 9, hour < 12 ? "AM" : "PM", color::text);
   if (title) fb.drawText(fonts::small, x + 10, 6, title, color::ink);
-  if (link_ == Link::Usb) drawUsb(fb, WIDTH - 32, BAR_H / 2);
-  if (link_ == Link::Battery) drawBattery(fb, WIDTH - 6, BAR_H / 2, battery_);
+  // Status icons, right to left: USB or battery, then the flash when it's on.
+  int right = WIDTH - 6;
+  if (link_ == Link::Usb) right = drawUsb(fb, WIDTH - 32, BAR_H / 2) - 8;
+  if (link_ == Link::Battery) right = drawBattery(fb, WIDTH - 6, BAR_H / 2, battery_) - 8;
+  if (flashOn()) drawFlash(fb, right, BAR_H / 2);
 }
 
 void Ui::renderHome(Framebuffer& fb) const {
@@ -296,7 +321,7 @@ void Ui::renderHome(Framebuffer& fb) const {
 
 void Ui::renderCamera(Framebuffer& fb) const {
   // No sensor in the emulator: color bars stand in for the preview, flipped like the real one.
-  const Rect view = {6, CONTENT.y + 6, WIDTH - 12, CONTENT.h - 12};
+  const Rect view = {0, BAR_H + 1, WIDTH, HEIGHT - BAR_H - 1};  // full-screen picture
   const int bars = sizeof BARS / sizeof BARS[0], split = view.h * 7 / 10;
   for (int i = 0; i < bars; i++) {
     int k = mirrored_ ? bars - 1 - i : i;  // bar edges from the view width: no rounding overflow
@@ -304,9 +329,13 @@ void Ui::renderCamera(Framebuffer& fb) const {
     fb.fillRect({x0, vflipped_ ? view.y + view.h - split : view.y, x1 - x0, split}, BARS[i]);
   }
   fb.fillRect({view.x, vflipped_ ? view.y : view.y + split, view.w, view.h - split}, rgb565(0x11, 0x11, 0x11));
+  if (grid_) {  // rule of thirds
+    for (int i = 1; i < 3; i++) {
+      fb.fillRect({view.x + view.w * i / 3, view.y, 1, view.h}, color::white);
+      fb.fillRect({view.x, view.y + view.h * i / 3, view.w, 1}, color::white);
+    }
+  }
   if (flashT_ < FLASH_MS) fb.fillRect(view, color::white);
-  fb.maskRoundRect(view, 12, color::bg);
-  fb.drawText(fonts::small, view.x + 8, view.y + view.h - 22, RESOLUTIONS[resolution_], color::white);
 }
 
 void Ui::renderPictures(Framebuffer& fb) const {
@@ -320,9 +349,13 @@ void Ui::renderPictures(Framebuffer& fb) const {
 }
 
 void Ui::renderSettings(Framebuffer& fb) const {
-  const char* const values[SETTING_COUNT] = {RESOLUTIONS[resolution_], mirrored_ ? "On" : "Off", vflipped_ ? "On" : "Off", "camera-esp"};
-  for (int i = 0; i < SETTING_COUNT; i++) {
-    Rect r = {8, ROWS_Y + i * ROW_PITCH, WIDTH - 16, ROW_H};
+  const char* const values[SETTING_COUNT] = {RESOLUTIONS[resolution_], mirrored_ ? "On" : "Off",
+                                             vflipped_ ? "On" : "Off",    grid_ ? "On" : "Off",
+                                             clock12_ ? "12h" : "24h",    "camera-esp"};
+  int shown = settingFocus_ == BACK ? SETTING_COUNT - 1 : settingFocus_;
+  int top = shown >= VISIBLE_ROWS ? shown - VISIBLE_ROWS + 1 : 0;  // keep the focused row in view
+  for (int i = top; i < SETTING_COUNT && i < top + VISIBLE_ROWS; i++) {
+    Rect r = {8, ROWS_Y + (i - top) * ROW_PITCH, WIDTH - 16, ROW_H};
     bool focused = i == settingFocus_;
     fb.fillRoundRect(r, 12, color::tile);
     outline(fb, r, 12, focused);

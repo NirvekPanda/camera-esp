@@ -6,7 +6,7 @@
 
 namespace ui {
 
-enum class Button : uint8_t { Up, Down, Left, Right, Center };  // the 5-way switch
+enum class Button : uint8_t { Up, Down, Left, Right, Center, A, B };  // 5-way switch + A/B
 enum class Screen : uint8_t { Home, Camera, Pictures, Settings, Viewer };
 enum class Link : uint8_t { None, Usb, Battery };  // nav bar top-right icon
 
@@ -14,7 +14,7 @@ constexpr int PAGE_COUNT = 3;          // Camera, Pictures, Settings
 constexpr uint32_t FOCUS_MS = 200;     // home row slide
 constexpr uint32_t OPEN_MS = 250;      // tile zoom into a page
 constexpr uint32_t FLASH_MS = 150;     // shutter flash
-constexpr int SETTING_COUNT = 4;       // Resolution, Mirror, Flip vertical, About
+constexpr int SETTING_COUNT = 6;       // Resolution, Mirror, Flip vertical, Grid, Clock, About
 constexpr int RESOLUTION_COUNT = 9;    // matches RESOLUTIONS in web/src/lib/camera/settings.ts
 constexpr int MAX_PHOTOS = 99;
 
@@ -25,8 +25,9 @@ constexpr int PRIMARY = -2;
 
 // The whole device UI: 5-way input + time in, frames out. Deterministic: the same presses and
 // ticks give the same pixels on the device and in the WASM build.
-// One control model everywhere (docs/wii-theme.md): arrows only move focus, Center only activates
-// the focused element, and every page has the same nav bar and bottom bar.
+// One control model everywhere (docs/wii-theme.md): arrows only move focus, Center/A activate the
+// focused element, B goes back, and pages share the nav bar and bottom bar. The camera is the one
+// full-screen app: A takes a picture, B toggles the flash, Center (MENU/OK) returns home.
 class Ui {
  public:
   void press(Button b);
@@ -46,6 +47,10 @@ class Ui {
   int resolution() const { return resolution_; }  // index into RESOLUTIONS
   bool mirrored() const { return mirrored_; }
   bool vflipped() const { return vflipped_; }
+  bool grid() const { return grid_; }        // rule-of-thirds overlay on the camera
+  bool clock12() const { return clock12_; }  // 12-hour clock with AM/PM
+  // The flash only works in the camera; the setting is kept for when it reopens.
+  bool flashOn() const { return screen_ == Screen::Camera && flash_; }
 
  private:
   void renderNavBar(Framebuffer& fb, const char* title) const;
@@ -56,8 +61,10 @@ class Ui {
   void renderSettings(Framebuffer& fb) const;
   void renderViewer(Framebuffer& fb) const;
   void pressHome(Button b);
+  void pressCamera(Button b);
   void pressPage(Button b);
   void activate();
+  void back();
   void open(Screen page);
 
   Screen screen_ = Screen::Home;
@@ -72,11 +79,10 @@ class Ui {
   uint32_t openT_ = OPEN_MS;
 
   uint32_t flashT_ = FLASH_MS;
-  int cameraFocus_ = PRIMARY;
   int photos_ = 5, photoFocus_ = 0;  // stays on the viewed photo while the viewer is open
   int lastPhoto_ = 0;  // where focus left the grid: reopening Pictures and Up from Back return here
   int settingFocus_ = 0, resolution_ = RESOLUTION_COUNT - 1;  // 1920x1080, the site's default
-  bool mirrored_ = false, vflipped_ = false;
+  bool mirrored_ = false, vflipped_ = false, grid_ = false, clock12_ = false, flash_ = false;
 };
 
 // Ease-out cubic on 0..1024 fixed point (no floats: identical results on every target).

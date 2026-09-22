@@ -68,11 +68,71 @@ test("arrow keys and Enter drive the 5-way switch", async ({ page }) => {
   await expect.poll(() => pixel(page, 22, 48)).not.toEqual(FIRST_THUMB); // home again
 });
 
+test("arrow keys, Space and Enter work without clicking the display first", async ({ page }) => {
+  await openDeviceTab(page);
+  await page.keyboard.press("ArrowRight"); // focus is on the page, not the canvas
+  await page.keyboard.press(" "); // Space = Center: open Pictures
+  await expect.poll(() => pixel(page, 22, 48)).toEqual(FIRST_THUMB);
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown"); // Back
+  await page.keyboard.press("Enter"); // Enter = Center
+  await expect.poll(() => pixel(page, 22, 48)).not.toEqual(FIRST_THUMB);
+  expect(await page.evaluate(() => window.scrollY)).toBe(0); // arrows/Space didn't scroll the page
+});
+
+test("after clicking a pad button, Space still means Center", async ({ page }) => {
+  await openDeviceTab(page);
+  await page.getByRole("button", { name: "Right" }).click(); // focus stays on that button
+  await page.keyboard.press(" "); // must press Center once, not click "Right" again
+  await expect.poll(() => pixel(page, 22, 48)).toEqual(FIRST_THUMB); // Pictures, not Settings
+});
+
+test("keys typed into other controls don't reach the emulator", async ({ page }) => {
+  await openDeviceTab(page);
+  await page.getByLabel("Camera source").focus();
+  await page.keyboard.press("ArrowDown"); // changes the select, not the device
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(300);
+  expect(await pixel(page, 22, 48)).not.toEqual(FIRST_THUMB);
+});
+
 test("the on-screen pad works like the keys", async ({ page }) => {
   await openDeviceTab(page);
   await page.getByRole("button", { name: "Right" }).click();
   await page.getByRole("button", { name: "Center" }).click();
   await expect.poll(() => pixel(page, 22, 48)).toEqual(FIRST_THUMB);
+});
+
+test("the display is centered, with the d-pad centered below it and A/B to its right", async ({ page }) => {
+  await openDeviceTab(page);
+  const screen = (await page.locator(".device-screen").boundingBox())!;
+  const main = (await page.locator("main").boundingBox())!;
+  const pad = (await page.getByRole("group", { name: "5-way switch" }).boundingBox())!;
+  const face = (await page.getByRole("group", { name: "A and B buttons" }).boundingBox())!;
+  const mid = (b: { x: number; width: number }) => b.x + b.width / 2;
+  expect(mid(screen)).toBeCloseTo(mid(main), 0);
+  expect(pad.y).toBeGreaterThan(screen.y + screen.height);
+  expect(Math.abs(mid(pad) - mid(screen))).toBeLessThan(face.width); // the pad + A/B pair is centered
+  expect(face.x).toBeGreaterThan(pad.x + pad.width);
+});
+
+test("camera: A shoots, B lights the ring outside the display, Center returns home", async ({ page }) => {
+  await openDeviceTab(page);
+  const frame = page.locator(".device-frame");
+  await page.getByRole("button", { name: "Center" }).click(); // open Camera
+  await expect.poll(() => pixel(page, 5, 60)).toEqual([255, 255, 255]); // camera picture shown (zoom done)
+  await page.getByRole("button", { name: "B" }).click();
+  await expect(frame).toHaveAttribute("data-flash", "on");
+  await expect.poll(() => frame.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgb(255, 255, 255)");
+  await page.getByRole("button", { name: "A" }).click();
+  await expect.poll(() => pixel(page, 120, 150)).toEqual([255, 255, 255]); // shutter blink on the panel
+  await page.locator(".device-screen").focus();
+  await page.keyboard.press("b"); // keys work too
+  await expect(frame).toHaveAttribute("data-flash", "off");
+  await page.getByRole("button", { name: "Center" }).click(); // MENU: back home
+  await page.getByRole("button", { name: "Right" }).click();
+  await page.getByRole("button", { name: "Center" }).click();
+  await expect.poll(() => pixel(page, 22, 48)).toEqual(FIRST_THUMB); // Pictures opened from home
 });
 
 test("shows the USB icon while the camera is connected over WebSerial", async ({ page }) => {

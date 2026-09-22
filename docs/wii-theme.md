@@ -21,17 +21,20 @@ about the Wii Menu (sources at the end):
 
 ### The rules
 
-1. **One frame.** Every screen has the nav bar on top (clock left, USB/battery right) and the
-   bottom bar below. Pages put **Back bottom-left** and their **primary action bottom-right**
-   (Camera: *Shoot*), in the same size, shape and position on every page, like the Wii's
-   *Wii Menu* / *Start* pair. Home has no Back; its bottom bar holds the page dots.
+1. **One frame.** Every screen has the nav bar on top (clock left, status icons right). Pages
+   have the bottom bar below with **Back bottom-left** (and any primary action bottom-right), in
+   the same size, shape and position on every page, like the Wii's *Wii Menu* / *Start* pair.
+   Home has no Back; its bottom bar holds the page dots. The **Camera is the one full-screen app**:
+   just the picture under the nav bar, like a camera's live view.
 2. **One control model.** Arrows *only* move focus, spatially: through the content, then down into
-   the bottom bar and back up. **Center *only* activates** the focused element. There are no other
-   bindings: no "Up goes home", no "Left/Right flips" on some pages.
+   the bottom bar and back up. **Center and A activate** the focused element, and **B goes back**
+   (Nintendo's A = OK, B = Back). There are no other bindings. The Camera app follows camera
+   convention instead: **A takes a picture, B toggles the flash**, and Center is **MENU/OK**
+   (back to Home), as on point-and-shoot cameras whose center button is MENU/OK.
 3. **One focus style.** A 3 px accent outline on whatever has focus: tiles, rows, thumbnails and
    buttons alike. Unfocused elements get a 1 px `line` outline.
-4. **Sensible first focus.** A page opens with its most likely action focused: Shoot on Camera,
-   the first row on Settings, the last-viewed photo on Pictures.
+4. **Sensible first focus.** A page opens with its most likely action focused: the first row on
+   Settings, the last-viewed photo on Pictures.
 5. **Labels and state only.** On-screen text is limited to names, values and state (`1920x1080`,
    `Off`, `76%`, a file name). Never instructions or commentary. The same rule applies to the
    website (see `CLAUDE.md`).
@@ -92,9 +95,21 @@ The Wii's pointer and big TV don't fit here. What changes:
   of a 4×3 grid. ← → moves focus. The row **slides with easing** to keep the focused tile centered,
   and the focused tile grows and gets the blue outline (the Wii hover). Page dots in the bottom bar
   show the position.
-- **Center** opens the focused page. On every page, **Back** is the bottom-left button. The Pictures
-  grid opens a photo in a **viewer**, whose only control is Back. Settings change with Center, which
-  toggles or cycles the value, because arrows never change values.
+- **Center** (or A) opens the focused page. On every page, **Back** is the bottom-left button (B
+  also goes back). The Pictures grid opens a photo in a **viewer**, whose only control is Back.
+  Settings change with Center, which toggles or cycles the value, because arrows never change
+  values. The settings are Resolution, Mirror, Flip vertical, **Grid** (rule-of-thirds overlay on
+  the camera), **Clock** (24h, or 12h with AM/PM in the nav bar) and About. Five rows are visible,
+  and the list scrolls to keep focus in view.
+- **Camera:** a full-screen picture under the nav bar, with no buttons on screen. A takes a picture
+  (a white blink), B toggles the flash, and Center returns to Home.
+- **Emulator keyboard:** arrow keys move, **Space and Enter are Center**, and `a`/`b` (any case)
+  are A and B. They work anywhere on the Device tab without clicking the display first, except
+  while typing in a form control. Browser defaults are cancelled, so the page doesn't scroll and a
+  focused pad button doesn't also click.
+- **Flash:** a light ring *around* the physical display, outside the 240×240 panel. On the panel,
+  a bolt icon sits in the status area to the left of the USB/battery icon. The emulator draws the
+  ring as a 20-panel-pixel white frame around the display (`ui_flash()`).
 
 ### Palette (RGB888 → RGB565)
 
@@ -139,19 +154,19 @@ the primary action always bottom-right. `┏━┓` marks the focused element.
 └────────────────────────────────────────┘
 ```
 
-**Camera** (in the emulator, color bars stand in for the sensor):
+**Camera** (full screen: the picture and the nav bar only; A shoots, B flash, Center = MENU):
 ```
 ┌────────────────────────────────────────┐
-│ 14:23  Camera                   76% ▭▯│
+│ 2:23 PM  Camera              ⚡ 76% ▭▯ │  12h clock; flash icon beside the battery
 ├────────────────────────────────────────┤
-│╭──────────────────────────────────────╮│
-││            live preview              ││  sensor frame, center-cropped
-││                                      ││
-││ 1920x1080                            ││  state, not instructions
-│╰──────────────────────────────────────╯│
-├────────────────────────────────────────┤
-│ ( Back )                   ┏ Shoot ┓   │  Shoot focused on open
+│        │             │                 │
+│        │  live       │                 │  rule-of-thirds grid (Settings → Grid)
+│────────┼─────────────┼─────────────────│
+│        │  preview    │                 │
+│────────┼─────────────┼─────────────────│
+│        │             │                 │
 └────────────────────────────────────────┘
+ flash on: a white ring lights up around the display, outside the panel
 ```
 
 **Pictures** (rounded thumbnails; Down past the grid reaches Back):
@@ -193,7 +208,8 @@ the primary action always bottom-right. `┏━┓` marks the focused element.
 │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ │
 │ │ Mirror                         Off │ │
 │ │ Flip vertical                  Off │ │
-│ │ About                   camera-esp │ │
+│ │ Grid                           Off │ │
+│ │ Clock                          24h │ │  About scrolls into view below
 ├────────────────────────────────────────┤
 │ ( Back )                               │
 └────────────────────────────────────────┘
@@ -246,7 +262,7 @@ frame goes through the ST7789 driver and emulator, so it's exactly what the pane
 | Framebuffer | pixels of rects, rounded corners, clipping, text | `make uitest` (native C++) |
 | Driver ↔ emulator | init sequence; full frame and partial windows round-trip to identical pixels; byte order; `MADCTL` rotation | `make uitest` |
 | UI state | focus movement, bottom bar reachable from every page, Center-only activation, viewer, eased animation end states, status icon (none/USB/battery) | `make uitest` |
-| Design rules | Back button pixel-identical on every page; arrows never change values or leave a page; no hint text | `make uitest` |
+| Design rules | Back button pixel-identical on every page; arrows never change values or leave a page; no hint text; camera has no bottom bar; flash never draws on the picture | `make uitest` |
 | Golden frames | FNV-1a hash of the panel after a scripted input sequence at fixed times | `make uitest` **and** Playwright against the WASM build. Both must equal the same constants: native == WASM, bit for bit |
 | Site tab | Device tab renders a 240×240 canvas, keyboard maps to the 5-way switch, the USB icon appears when the camera is connected | Playwright |
 
