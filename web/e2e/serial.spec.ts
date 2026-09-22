@@ -73,17 +73,18 @@ test("applies resolution, fps and mirror on the device", async ({ page }) => {
   await expect.poll(() => page.evaluate(() => window.fakeCamera.vflip)).toBe(true);
 });
 
-test("streams the 1920×1080 default on an OV3660", async ({ page }) => {
+test("streams the 480×480 default (VGA frames, center-cropped)", async ({ page }) => {
   await connectUsb(page);
-  expect(await page.evaluate(() => window.fakeCamera.size)).toEqual([1920, 1080]);
-  await expect(page.getByLabel("Resolution")).toHaveValue("1920x1080");
+  expect(await page.evaluate(() => window.fakeCamera.size)).toEqual([640, 480]);
+  await expect(page.getByLabel("Resolution")).toHaveValue("480x480");
   await expect(errorBanner(page)).toHaveCount(0);
 });
 
-test("an OV2640 connects at 240×240 when it can't do the 1920×1080 default", async ({ page }) => {
+test("an OV2640 connects at 240×240 when it can't do the 1920×1080 chosen before connecting", async ({ page }) => {
   await page.evaluate(() => {
     window.fakeCamera.sensor = "OV2640";
   });
+  await page.getByLabel("Resolution").selectOption("1920x1080");
   await connectUsb(page);
   expect(await page.evaluate(() => window.fakeCamera.size)).toEqual([240, 240]);
   await expect(page.getByLabel("Resolution")).toHaveValue("240x240");

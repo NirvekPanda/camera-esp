@@ -22,6 +22,8 @@ constexpr int RESOLUTION_COUNT = 9;    // matches RESOLUTIONS in web/src/lib/cam
 constexpr int PREVIEW_Y = 28;
 constexpr int PREVIEW_W = WIDTH;
 constexpr int PREVIEW_H = HEIGHT - PREVIEW_Y;
+// The photo viewer's picture area, between the nav bar and the bottom bar (Back, Delete).
+constexpr int VIEWER_H = 177;
 
 // Pictures grid thumbnails are THUMB_SIZE x THUMB_SIZE (PhotoLibrary::pixels is asked for this
 // size and for PREVIEW_W x PREVIEW_H in the viewer).
@@ -52,6 +54,10 @@ class Ui {
   void libraryChanged();
   // Shutter presses since the last call: the host takes the photos (on the SD card) and refreshes
   // the library, so a new photo appears once it's saved.
+  // The photo the user confirmed deleting, copied to out (PHOTO_NAME_MAX), once. The host removes
+  // it from the SD card and calls libraryChanged(); the viewer then shows the next photo.
+  bool takeDeleteRequest(char* out);
+  bool confirmingDelete() const { return confirmDelete_; }
   int takeCaptureRequests() {
     int n = captureRequests_;
     captureRequests_ = 0;
@@ -79,7 +85,7 @@ class Ui {
 
  private:
   void renderNavBar(Framebuffer& fb, const char* title) const;
-  void renderBottomBar(Framebuffer& fb, int focus, const char* primary) const;
+  void renderBottomBar(Framebuffer& fb, int focus, const char* primary, bool danger = false) const;
   void renderHome(Framebuffer& fb) const;
   void renderCamera(Framebuffer& fb) const;
   void renderPictures(Framebuffer& fb) const;
@@ -108,12 +114,15 @@ class Ui {
   uint32_t flashT_ = FLASH_MS;
   int photoFocus_ = 0;  // stays on the viewed photo while the viewer is open
   int lastPhoto_ = 0;  // where focus left the grid: reopening Pictures and Up from Back return here
-  int settingFocus_ = 0, resolution_ = RESOLUTION_COUNT - 1;  // 1920x1080, the site's default
+  int settingFocus_ = 0, resolution_ = 1;  // 480x480, the site's default
   bool mirrored_ = false, vflipped_ = false, grid_ = false, clock12_ = false, flash_ = false;
   const uint16_t* preview_ = nullptr;
   PhotoLibrary* library_ = nullptr;
   int captureRequests_ = 0;
   char focusedPhoto_[PHOTO_NAME_MAX] = {};  // name of photoFocus_'s photo, to find it again
+  int viewerFocus_ = 0;  // 0: the photo; BACK or PRIMARY (Delete) in the bottom bar
+  bool confirmDelete_ = false;  // Delete pressed once: it reads Confirm, in red
+  char deleteRequest_[PHOTO_NAME_MAX] = {};
 };
 
 // "June, 21, 2026" if it fits in maxWidth px, else "Jun, 21, 2026", else "Jun, 21".

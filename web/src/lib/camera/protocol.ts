@@ -26,6 +26,7 @@ export const PacketType = {
   FPS: 0x88,
   VFLIP: 0x89,
   PHOTO_PIXELS: 0x8a,
+  DELETE_FILE: 0x8b,
 } as const;
 
 export interface Packet {

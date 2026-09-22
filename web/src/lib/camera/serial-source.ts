@@ -137,6 +137,10 @@ export class SerialSource implements CameraSource {
     return new Blob([data], { type: "image/jpeg" });
   }
 
+  async deleteFile(name: string) {
+    await this.request(PacketType.DELETE_FILE, encoder.encode(name));
+  }
+
   /** Decoded on the camera (its SD card, its JPEG decoder): the same pixels its screen shows. */
   async getPixels(name: string, width: number, height: number) {
     const payload = new Uint8Array([...u16Pair(width, height), ...encoder.encode(name)]);

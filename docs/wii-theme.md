@@ -107,13 +107,16 @@ The Wii's pointer and big TV don't fit here. What changes:
   - The UI remembers the focused photo by name: after the library changes (`libraryChanged()`,
     e.g. a new photo inserted first), focus and the open viewer stay on the same photo.
 
-  The Pictures grid (which keeps its Back button) opens a photo with Center/A in a **full-screen
-  viewer**: just the photo and the nav bar, which shows **when the photo was taken**, its time
+  The Pictures grid (which keeps its Back button) opens a photo with Center/A in the **viewer**:
+  the photo between the nav bar and the usual bottom bar. The nav bar shows **when the photo was taken**, its time
   and then its date (`10:30 - June, 21, 2026`). If the full month wouldn't fit before the status
   icons, it's shortened (`Sep, 3, 2026`). The date and time come from the photo's
   `YYYYMMDD-HHMMSS` file name, which the camera's clock sets when saving. Other names (`IMG_0001.jpg`)
-  show the name instead. Left/Right step through the photos,
-  and B returns to the gallery.
+  show the name instead. The photo opens focused, and Left/Right step through the photos. Down
+  reaches the bottom bar: **Back** bottom-left and **Delete** bottom-right. Pressing Delete turns it
+  into a red **Confirm** in the same place, and pressing it again asks the host to delete the photo
+  (`takeDeleteRequest`), which removes the photo, its preview and its cached thumbnail. Any arrow
+  or B disarms Confirm. B returns to the gallery.
   Settings change with Center, which toggles or cycles the value, because arrows never change
   values. The settings are Resolution, Mirror, Flip vertical, **Grid** (rule-of-thirds overlay on
   the camera), **Clock** (24h, or 12h with AM/PM in the nav bar) and About. Five rows are visible,
@@ -214,14 +217,16 @@ the primary action always bottom-right. `┏━┓` marks the focused element.
 └────────────────────────────────────────┘
 ```
 
-**Viewer** (full screen like the camera; Left/Right step through photos, B back to the gallery):
+**Viewer** (Left/Right step through photos, Down to the bar, B back to the gallery):
 ```
 ┌────────────────────────────────────────┐
 │ 10:30  - June, 21, 2026            ⭘USB│
 ├────────────────────────────────────────┤
 │                                        │
-│                photo                   │
+│                photo                   │  outlined while it has focus
 │                                        │
+├────────────────────────────────────────┤
+│ ( Back )                     ( Delete )│  Delete pressed once: red ( Confirm )
 └────────────────────────────────────────┘
 ```
 
@@ -231,7 +236,7 @@ the primary action always bottom-right. `┏━┓` marks the focused element.
 │ 14:23  Settings                    ⭘USB│
 ├────────────────────────────────────────┤
 │ ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓ │
-│ ┃ Resolution               1920x1080 ┃ │
+│ ┃ Resolution                 480x480 ┃ │
 │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ │
 │ │ Mirror                         Off │ │
 │ │ Flip vertical                  Off │ │
@@ -243,7 +248,7 @@ the primary action always bottom-right. `┏━┓` marks the focused element.
 ```
 
 `make ui-preview` prints the *real* rendered frames (Home, mid-slide, mid-zoom, Pictures,
-Viewer, Settings, Camera with Shoot focused, Camera with Back focused) in the terminal as truecolor half-block pixels, so these mockups get checked
+Viewer, Viewer with Confirm armed, Settings, Camera with Shoot focused, Camera with Back focused) in the terminal as truecolor half-block pixels, so these mockups get checked
 against the actual code. `OUT=dir make ui-preview` also writes each frame as a 240×240 PPM. Every
 frame goes through the ST7789 driver and emulator, so it's exactly what the panel would show.
 

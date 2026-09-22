@@ -7,7 +7,7 @@
   const T = {
     FRAME: 0x01, CAPTURED: 0x02, FILE_LIST: 0x03, FILE_DATA: 0x04, OK: 0x05, PIXELS: 0x06, ERROR: 0x7f,
     SET_TIME: 0x81, CAPTURE: 0x82, LIST: 0x83, GET_FILE: 0x84, STREAM: 0x85, MIRROR: 0x86,
-    RESOLUTION: 0x87, FPS: 0x88, VFLIP: 0x89, PHOTO_PIXELS: 0x8a,
+    RESOLUTION: 0x87, FPS: 0x88, VFLIP: 0x89, PHOTO_PIXELS: 0x8a, DELETE_FILE: 0x8b,
   };
   // Like the firmware: square crops arrive as VGA/HD. An OV2640 has no 1920×1080.
   const SENSOR_FRAME = { "480x480": [640, 480], "720x720": [1280, 720] };
@@ -126,6 +126,10 @@
         const name = new TextDecoder().decode(payload);
         const data = camera.files.get(name);
         return data ? send(T.FILE_DATA, data) : sendText(T.ERROR, `File not found: ${name}`);
+      }
+      case T.DELETE_FILE: {
+        const name = new TextDecoder().decode(payload);
+        return camera.files.delete(name) ? send(T.OK) : sendText(T.ERROR, `File not found: ${name}`);
       }
       case T.PHOTO_PIXELS: {
         // Like the firmware: decode the stored photo, center-crop and scale it, reply RGB565 LE.

@@ -677,7 +677,7 @@ TEST(pictures_grid_bottom_bar_and_viewer) {
   ui.press(Button::Center);  // Center activates the focused photo
   CHECK(ui.screen() == Screen::Viewer);
   CHECK_EQ(ui.focus(), 4);  // the photo being viewed
-  ui.press(Button::Center);  // already open: nothing to activate
+  ui.press(Button::Center);  // the photo is already open: nothing to activate
   CHECK(ui.screen() == Screen::Viewer);
   ui.press(Button::B);
   CHECK(ui.screen() == Screen::Pictures);
@@ -691,9 +691,9 @@ TEST(settings_center_changes_value) {
   openPage(ui, 2);
   CHECK(ui.screen() == Screen::Settings);
   CHECK_EQ(ui.focus(), 0);
-  CHECK_EQ(ui.resolution(), RESOLUTION_COUNT - 1);
-  ui.press(Button::Center);  // resolution cycles forward and wraps
-  CHECK_EQ(ui.resolution(), 0);
+  CHECK_EQ(ui.resolution(), 1);  // 480x480, the default
+  for (int i = 1; i < RESOLUTION_COUNT; i++) ui.press(Button::Center);  // cycles forward...
+  CHECK_EQ(ui.resolution(), 0);                                         // ...and wraps
   ui.press(Button::Down);
   ui.press(Button::Center);
   CHECK(ui.mirrored());
@@ -858,29 +858,81 @@ TEST(back_button_is_identical_on_every_page) {
   CHECK(regionHas(fb, back, color::accent));  // focused: the same blue outline as tiles
 }
 
-TEST(viewer_is_full_screen_and_arrows_step_through_photos) {
+TEST(viewer_has_back_and_delete_and_arrows_step_through_photos) {
   Ui ui;
   openPage(ui, 1);
   ui.press(Button::Right);
   ui.press(Button::A);
   CHECK(ui.screen() == Screen::Viewer);
+  CHECK_EQ(ui.focus(), 1);  // the photo is focused
   ui.render(fb);
-  CHECK(!regionHas(fb, {0, 206, WIDTH, HEIGHT - 206}, color::bar));  // no bottom bar
-  CHECK_EQ(fb.at(120, 27), color::line);  // nav bar (file name) still there
-  ui.press(Button::Right);
+  CHECK_EQ(fb.at(120, 205), color::line);  // bottom bar divider: the bar is back
+  CHECK(regionHas(fb, {0, 206, WIDTH / 2, HEIGHT - 206}, color::tile));      // Back
+  CHECK(regionHas(fb, {WIDTH / 2, 206, WIDTH / 2, HEIGHT - 206}, color::tile));  // Delete
+  ui.press(Button::Right);  // photo focused: arrows step through photos
   CHECK_EQ(ui.focus(), 2);
   ui.render(fb2);
-  CHECK(!sameRegion(fb, fb2, {0, 28, WIDTH, HEIGHT - 28}));  // a different photo
-  ui.press(Button::Right);
-  ui.press(Button::Right);
-  ui.press(Button::Right);
+  CHECK(!sameRegion(fb, fb2, {0, 28, WIDTH, 177}));  // a different photo
+  for (int i = 0; i < 10; i++) ui.press(Button::Right);
   CHECK_EQ(ui.focus(), ui.photoCount() - 1);  // stops at the last photo
-  for (int i = 0; i < 10; i++) ui.press(Button::Left);
-  CHECK_EQ(ui.focus(), 0);  // and at the first
-  ui.press(Button::Up);
+  ui.press(Button::Down);  // into the bottom bar: Back
+  CHECK_EQ(ui.focus(), BACK);
+  ui.press(Button::Right);  // Delete, right of Back
+  CHECK_EQ(ui.focus(), PRIMARY);
+  ui.press(Button::Up);  // back to the photo
+  CHECK_EQ(ui.focus(), ui.photoCount() - 1);
   ui.press(Button::Down);
-  CHECK(ui.screen() == Screen::Viewer);  // up/down don't leave or change anything
-  CHECK_EQ(ui.focus(), 0);
+  ui.press(Button::Center);  // Back
+  CHECK(ui.screen() == Screen::Pictures);
+}
+
+TEST(delete_turns_into_a_red_confirm_and_a_second_press_deletes) {
+  Ui ui;
+  openPage(ui, 1);
+  ui.press(Button::Center);  // view photo 0
+  ui.press(Button::Down);
+  ui.press(Button::Right);
+  ui.render(fb);  // (194, 214): inside the Delete button
+  CHECK_EQ(fb.at(194, 214), color::tile);
+  ui.press(Button::Center);  // Delete: arms Confirm
+  char name[PHOTO_NAME_MAX];
+  CHECK(!ui.takeDeleteRequest(name));
+  CHECK(ui.confirmingDelete());
+  CHECK_EQ(ui.focus(), PRIMARY);  // still on the same button
+  ui.render(fb);
+  CHECK_EQ(fb.at(194, 214), color::danger);
+  ui.press(Button::Left);  // moving away disarms
+  CHECK(!ui.confirmingDelete());
+  ui.press(Button::Right);
+  ui.press(Button::Center);
+  ui.press(Button::B);  // B disarms, and stays
+  CHECK(!ui.confirmingDelete());
+  CHECK(ui.screen() == Screen::Viewer);
+  CHECK(!ui.takeDeleteRequest(name));
+  ui.press(Button::Center);  // Delete, Confirm
+  ui.press(Button::Center);
+  CHECK(!ui.confirmingDelete());
+  CHECK(ui.takeDeleteRequest(name));
+  CHECK(strcmp(name, demoPhotos.names[0]) == 0);
+  CHECK(!ui.takeDeleteRequest(name));  // once
+  CHECK(ui.screen() == Screen::Viewer);  // stays until the host updates the library
+}
+
+TEST(viewer_moves_on_after_its_photo_is_deleted) {
+  FakeLibrary photos(3);
+  Ui ui;
+  openPage(ui, 1);
+  ui.setLibrary(&photos);
+  ui.press(Button::Right);
+  ui.press(Button::Center);  // view photo 1
+  snprintf(photos.names[1], PHOTO_NAME_MAX, "%s", photos.names[2]);  // photo 1 deleted: the rest shift up
+  photos.n = 2;
+  ui.libraryChanged();
+  CHECK(ui.screen() == Screen::Viewer);
+  CHECK(ui.focus() >= 0 && ui.focus() < 2);  // on a photo that exists
+  photos.n = 0;
+  ui.libraryChanged();
+  CHECK(ui.screen() == Screen::Pictures);  // nothing left to view
 }
 
 TEST(settings_icon_is_a_gear) {

@@ -7,6 +7,7 @@ export const PREVIEW_Y = 28;
 export const PREVIEW_W = 240;
 export const PREVIEW_H = PANEL_SIZE - PREVIEW_Y;
 export const THUMB_SIZE = 64; // ui::THUMB_SIZE
+export const VIEWER_H = 177; // ui::VIEWER_H: the viewer's picture is PANEL_SIZE x VIEWER_H
 export const MAX_PHOTOS = 128; // HostLibrary::MAX in firmware/wasm/device_ui.cpp
 const NAME_MAX = 24; // ui::PHOTO_NAME_MAX, including the NUL
 
@@ -49,6 +50,7 @@ interface Exports {
   ui_library_image_ready(index: number): void;
   ui_library_wanted_image(): number;
   ui_take_capture_requests(): number;
+  ui_take_delete_request(): number;
   ui_set_preview(on: number): void;
   ui_golden(): number;
   ui_golden_expected(): number;
@@ -88,13 +90,20 @@ export async function createDeviceUi(wasm: BufferSource) {
       new Uint16Array(e.memory.buffer, e.ui_library_thumb(index), THUMB_SIZE * THUMB_SIZE).set(pixels);
       e.ui_library_thumb_ready(index);
     },
-    /** PREVIEW_W x PREVIEW_H RGB565 for the viewer, for photo index. */
+    /** PANEL_SIZE x VIEWER_H RGB565 for the viewer, for photo index. */
     setImage: (index: number, pixels: Uint16Array) => {
-      new Uint16Array(e.memory.buffer, e.ui_library_image(), PREVIEW_W * PREVIEW_H).set(pixels);
+      new Uint16Array(e.memory.buffer, e.ui_library_image(), PANEL_SIZE * VIEWER_H).set(pixels);
       e.ui_library_image_ready(index);
     },
     /** The photo the viewer is waiting for, or -1. */
     wantedImage: () => e.ui_library_wanted_image(),
+    /** The photo the user confirmed deleting, once; null if none. */
+    takeDeleteRequest: () => {
+      const ptr = e.ui_take_delete_request();
+      if (!ptr) return null;
+      const bytes = new Uint8Array(e.memory.buffer, ptr, NAME_MAX);
+      return new TextDecoder().decode(bytes.subarray(0, bytes.indexOf(0)));
+    },
     /** Shutter presses since the last call: the page saves that many photos. */
     takeCaptureRequests: () => e.ui_take_capture_requests(),
     /** Flash on: a light ring around the physical display, outside the panel. */

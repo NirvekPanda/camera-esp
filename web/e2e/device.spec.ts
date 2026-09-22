@@ -35,6 +35,9 @@ const onPictures = async (page: Page) => {
   return back.every((v) => v === 255) && content.every((v, i) => v === BG[i]);
 };
 
+// The viewer's Delete button, bottom-right (the Pictures page has no primary button).
+const onViewer = async (page: Page) => (await pixel(page, 194, 214)).every((v) => v === 255);
+
 async function openDeviceTab(page: Page) {
   await page.getByRole("link", { name: "Device" }).click();
   await expect(page).toHaveURL(/\/device\/$/);
@@ -236,7 +239,7 @@ test.describe("Pictures page with the camera's SD card", () => {
     await page.keyboard.press("Enter"); // Pictures (the thumbnail fails: a tile)
     await expect.poll(() => onPictures(page)).toBe(true); // opened (input is ignored while zooming)
     await page.keyboard.press("Enter"); // viewer (the image fails)
-    await expect.poll(() => onPictures(page)).toBe(false);
+    await expect.poll(() => onViewer(page)).toBe(true);
     await page.waitForTimeout(1500);
     const requests = await page.evaluate(
       () => (window as unknown as { fakeCamera: { commands: number[] } }).fakeCamera.commands.filter((c) => c === 0x8a).length,
@@ -257,5 +260,28 @@ test.describe("Pictures page with the camera's SD card", () => {
     await expect.poll(async () => isGreen(await pixel(page, 12 + 44, 38 + 32))).toBe(true);
     await page.getByRole("link", { name: "Camera" }).click();
     await expect(page.getByRole("heading", { name: "Photos (1)" })).toBeVisible(); // same photo, same list
+  });
+
+  test("Delete, then Confirm, deletes the photo on the board", async ({ page }) => {
+    await page.getByRole("button", { name: "Connect" }).click();
+    await page.getByRole("button", { name: "Take picture" }).click();
+    await expect(page.getByRole("heading", { name: "Photos (1)" })).toBeVisible();
+    await openDeviceTab(page);
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("Enter"); // Pictures
+    await expect.poll(async () => isGreen(await pixel(page, 12 + 44, 38 + 32))).toBe(true);
+    await page.keyboard.press("Enter"); // viewer
+    await expect.poll(() => onViewer(page)).toBe(true);
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("Enter"); // Delete: turns into a red Confirm
+    await expect.poll(async () => isRed(await pixel(page, 194, 214))).toBe(true);
+    const files = () => page.evaluate(() => (window as unknown as { fakeCamera: { files: Map<string, Uint8Array> } }).fakeCamera.files.size);
+    expect(await files()).toBe(1);
+    await page.keyboard.press("Enter"); // Confirm
+    await expect.poll(files).toBe(0);
+    await expect.poll(() => onPictures(page)).toBe(true); // nothing left to view
+    await page.getByRole("link", { name: "Camera" }).click();
+    await expect(page.getByRole("heading", { name: "Photos (0)" })).toBeVisible();
   });
 });

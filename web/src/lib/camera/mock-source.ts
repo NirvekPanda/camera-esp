@@ -119,6 +119,10 @@ export class MockSource implements CameraSource {
     return [...sdCard].map(([name, blob]) => ({ name, size: blob.size }));
   }
 
+  async deleteFile(name: string) {
+    if (!sdCard.delete(name)) throw new Error(`File not found: ${name}`);
+  }
+
   async getPixels(name: string, width: number, height: number) {
     return imageToRgb565(await this.getFile(name), width, height);
   }

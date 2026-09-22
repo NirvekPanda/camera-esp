@@ -12,6 +12,7 @@ import {
   PREVIEW_H,
   PREVIEW_W,
   THUMB_SIZE,
+  VIEWER_H,
   Screen,
   createDeviceUi,
   type DeviceUi,
@@ -32,16 +33,19 @@ const FACE = [
 
 /** The camera's 240×240 display, emulated: the device UI in WebAssembly driving a virtual ST7789. */
 export function DeviceScreen() {
-  const { source, status, files, capture } = useCamera();
+  const { source, status, files, capture, deleteFile } = useCamera();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const uiRef = useRef<DeviceUi | null>(null);
   const [ui, setUi] = useState<DeviceUi | null>(null);
   const thumbCache = useRef(new Map<string, Uint16Array>()); // by file name, for the current camera
-  const captureRef = useRef(capture); // the context's functions change every render
+  // The context's functions change every render: read them through refs.
+  const captureRef = useRef(capture);
+  const deleteRef = useRef(deleteFile);
 
   useEffect(() => {
     captureRef.current = capture;
-  }, [capture]);
+    deleteRef.current = deleteFile;
+  }, [capture, deleteFile]);
   const linkRef = useRef<number>(Link.None);
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState(false);
@@ -129,12 +133,18 @@ export function DeviceScreen() {
     const poll = setInterval(() => {
       // Shutter presses save photos through the camera connection; its file list then updates.
       for (let n = ui.takeCaptureRequests(); n > 0; n--) void captureRef.current();
+      // A confirmed delete removes the photo through the connection; the file list then updates.
+      const doomed = ui.takeDeleteRequest();
+      if (doomed) {
+        thumbCache.current.delete(doomed); // a later photo can reuse the name (IMG_0001.jpg)
+        void deleteRef.current(doomed);
+      }
       const wanted = ui.wantedImage();
       const name = namesRef.current[wanted];
       if (!name || name === loading || name === failed) return;
       loading = name;
       source
-        .getPixels(name, PREVIEW_W, PREVIEW_H)
+        .getPixels(name, PANEL_SIZE, VIEWER_H)
         .then((pixels) => {
           if (!cancelled && namesRef.current[wanted] === name) ui.setImage(wanted, pixels);
         })

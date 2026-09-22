@@ -30,6 +30,7 @@ enum Type : uint8_t {
   FPS = 0x88,
   VFLIP = 0x89,
   PHOTO_PIXELS = 0x8A,
+  DELETE_FILE = 0x8B,
 };
 
 // Writes return false when USB dropped bytes (the host stopped reading for longer than the TX timeout).

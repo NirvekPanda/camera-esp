@@ -174,6 +174,8 @@ void capture() {
   size_t size = fb->len;
   bool written = file && file.write(fb->buf, size) == size;
   file.close();
+  // The ready-made preview, from the JPEG still in memory; without one it's made on first view.
+  if (written) SdPhotoLibrary::savePreview(name.c_str(), fb->buf, size);
   esp_camera_fb_return(fb);
   resumeStream();
   if (!written) {
@@ -235,6 +237,13 @@ void sendFile(const char* name) {
   file.close();
 }
 
+void deletePhoto(const char* name) {
+  if (!sdReady) return sendError("No SD card");
+  if (strchr(name, '/')) return sendError("Invalid file name");
+  if (!library.remove(name)) return sendError(String("File not found: ") + name);
+  ok();
+}
+
 void handle(uint8_t type, const uint8_t* payload, uint32_t length) {
   switch (type) {
     case SET_TIME: {
@@ -250,6 +259,8 @@ void handle(uint8_t type, const uint8_t* payload, uint32_t length) {
       return sendFile(reinterpret_cast<const char*>(payload));
     case PHOTO_PIXELS:
       return sendPhotoPixels(payload, length);
+    case DELETE_FILE:
+      return deletePhoto(reinterpret_cast<const char*>(payload));
   }
 
   // The rest need the camera.

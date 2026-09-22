@@ -34,6 +34,7 @@ interface CameraContextValue {
   disconnect(): void;
   release(): Promise<void>; // disconnect and wait until the serial port is free
   capture(): Promise<void>;
+  deleteFile(name: string): Promise<void>;
   toggleMirror(): Promise<void>;
   toggleVflip(): Promise<void>;
   changeResolution(resolution: Resolution): Promise<void>;
@@ -102,7 +103,7 @@ export function CameraProvider({ children }: { children: ReactNode }) {
       try {
         await next.setResolution(resolution);
       } catch (e) {
-        // e.g. an OV2640 has no 1920×1080 (the default): connect at a size every sensor has.
+        // e.g. 1920×1080 chosen before connecting an OV2640: connect at a size every sensor has.
         await next.setResolution(FALLBACK_RESOLUTION);
         settingsRef.current = { ...settingsRef.current, resolution: FALLBACK_RESOLUTION };
         setSettings(settingsRef.current);
@@ -157,6 +158,16 @@ export function CameraProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  async function deleteFile(name: string) {
+    if (!source) return;
+    try {
+      await source.deleteFile(name);
+      setFiles((prev) => prev.filter((f) => f.name !== name));
+    } catch (e) {
+      setError(message(e));
+    }
+  }
+
   async function refreshFiles() {
     if (!source) return;
     try {
@@ -180,6 +191,7 @@ export function CameraProvider({ children }: { children: ReactNode }) {
         disconnect,
         release,
         capture,
+        deleteFile,
         toggleMirror: () => updateSetting("mirrored", !settingsRef.current.mirrored),
         toggleVflip: () => updateSetting("vflip", !settingsRef.current.vflip),
         changeResolution: (resolution) => updateSetting("resolution", resolution),

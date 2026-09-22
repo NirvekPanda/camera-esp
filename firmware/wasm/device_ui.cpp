@@ -19,7 +19,7 @@ class HostLibrary : public ui::PhotoLibrary {
   char names[MAX][ui::PHOTO_NAME_MAX] = {};
   uint16_t thumbs[MAX][THUMB_PIXELS];
   bool thumbReady[MAX] = {};
-  uint16_t image[ui::PREVIEW_W * ui::PREVIEW_H];
+  uint16_t image[ui::WIDTH * ui::VIEWER_H];
   int imageIndex = -1;   // which photo `image` holds
   int wantedImage = -1;  // the viewer asked for this one and it isn't loaded
   int n = 0;
@@ -31,7 +31,7 @@ class HostLibrary : public ui::PhotoLibrary {
       memcpy(out, thumbs[index], sizeof thumbs[index]);
       return true;
     }
-    if (w == ui::PREVIEW_W && h == ui::PREVIEW_H) {
+    if (w == ui::WIDTH && h == ui::VIEWER_H) {
       if (imageIndex == index) {
         memcpy(out, image, sizeof image);
         return true;
@@ -100,6 +100,11 @@ EMSCRIPTEN_KEEPALIVE void ui_library_image_ready(int index) {
 }
 EMSCRIPTEN_KEEPALIVE int ui_library_wanted_image() { return library.wantedImage; }
 EMSCRIPTEN_KEEPALIVE int ui_take_capture_requests() { return device.takeCaptureRequests(); }
+// The photo the user confirmed deleting (file name), once; null if none.
+EMSCRIPTEN_KEEPALIVE const char* ui_take_delete_request() {
+  static char name[ui::PHOTO_NAME_MAX];
+  return device.takeDeleteRequest(name) ? name : nullptr;
+}
 
 EMSCRIPTEN_KEEPALIVE int ui_screen() { return int(device.screen()); }
 EMSCRIPTEN_KEEPALIVE int ui_focus() { return device.focus(); }

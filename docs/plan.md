@@ -110,7 +110,8 @@ vendors (`0x303A`, `0x2886`).
   - **Photos always use the camera's best resolution and quality**, whatever the stream is set to:
     2048×1536 (QXGA) on an OV3660, 1600×1200 (UXGA) on an OV2640, JPEG quality 10 (stream: 12).
     The viewport takes the stream's aspect ratio.
-  - **Default: 1920×1080.** If the camera rejects it on connect (an OV2640 tops out at UXGA), the
+  - **Default: 480×480**, so the stream starts fast; photos are full resolution anyway. If the
+    camera rejects the chosen size on connect (e.g. 1920×1080 on an OV2640, which tops out at UXGA), the
     site connects at 240×240 (`FALLBACK_RESOLUTION`, which every sensor supports) and shows the
     sensor's error rather than failing the connection.
   - Settings can be chosen before connecting and are re-applied on every connect.
@@ -140,7 +141,7 @@ Binary packets, so JPEGs need no base64:
 | ESP → site | `0x03` | `FILE_LIST` | JSON `[{name,size}]` |
 | ESP → site | `0x04` | `FILE_DATA` | JPEG bytes |
 | ESP → site | `0x06` | `PIXELS` | u16 LE width, u16 LE height, then RGB565 LE pixels |
-| ESP → site | `0x05` | `OK` | none: reply to `SET_TIME`, `STREAM`, `MIRROR`, `VFLIP`, `RESOLUTION`, `FPS` |
+| ESP → site | `0x05` | `OK` | none: reply to `SET_TIME`, `STREAM`, `MIRROR`, `VFLIP`, `RESOLUTION`, `FPS`, `DELETE_FILE` |
 | ESP → site | `0x7F` | `ERROR` | UTF-8 message |
 | site → ESP | `0x81` | `SET_TIME` | u32 LE unix seconds |
 | site → ESP | `0x82` | `CAPTURE` | none |
@@ -151,7 +152,8 @@ Binary packets, so JPEGs need no base64:
 | site → ESP | `0x87` | `RESOLUTION` | u16 LE width, u16 LE height (one of `RESOLUTIONS`) |
 | site → ESP | `0x88` | `FPS` | u8 target frames per second |
 | site → ESP | `0x89` | `VFLIP` | u8 (1 = upside down, relative to the sensor's mounting) |
-| site → ESP | `0x8A` | `PHOTO_PIXELS` | u16 LE width, u16 LE height (≤ 240), UTF-8 file name. The photo from the SD card, decoded on the device, center-cropped and scaled: reply `PIXELS`. This is what the device UI shows, and how the emulator gets it |
+| site → ESP | `0x8A` | `PHOTO_PIXELS` | u16 LE width, u16 LE height (≤ 240), UTF-8 file name. The photo from the SD card, decoded on the device, center-cropped and scaled: reply `PIXELS`. This is what the device UI shows, and how the emulator gets it. Read from the photo's preview (below) |
+| site → ESP | `0x8B` | `DELETE_FILE` | UTF-8 filename. Deletes the photo and its preview: reply `OK` |
 
 - **Every command gets exactly one reply, in order:** `OK`, its data packet (`CAPTURED`,
   `FILE_LIST`, `FILE_DATA`), or `ERROR` with a message for the UI. `FRAME`s are unsolicited and can
@@ -207,7 +209,7 @@ web/
 │   ├── photos.spec.ts          # capture, file list, modal navigation, persistence, mirrored photos
 │   ├── stream-settings.spec.ts # resolution/fps options, resize, photo size, pre-connect settings
 │   ├── viewer.spec.ts          # resizable viewer: drag, clamps, keyboard, button placement, vflip
-│   ├── device.spec.ts          # Device tab: WASM golden in the browser, keys/pad, USB icon, tabs
+│   ├── device.spec.ts          # Device tab: WASM golden in the browser, keys/pad, USB icon, tabs, Pictures, delete
 │   ├── firmware-update.spec.ts # Update firmware: releases the camera, reports failures, recovers
 │   ├── serial.spec.ts          # USB camera end to end against the fake device (below)
 │   ├── fake-serial-device.js   # fake ESP32 on navigator.serial speaking the firmware protocol
@@ -297,16 +299,25 @@ firmware/
   `PhotoLibrary` on the microSD card:
   - Scans all of `/photos` and keeps the newest 128 (`keepNewest`): the card's folder order is
     arbitrary, and cutting off before sorting would drop the newest.
+  - **Ready-made previews:** every photo gets a preview with the same name,
+    `/photos/previews/<name>.rgb`: 240×180 RGB565 LE with no header (the photo's 4:3 at screen
+    size). `CAPTURE` makes it from the JPEG still in memory. Thumbnails and the viewer are
+    `scaleCover`ed from it, an SD read instead of a 2048×1536 decode. A photo without one (taken by
+    older firmware) gets it made on first view.
   - Decodes JPEGs with the camera library's `jpg2rgb565`, using its built-in 1/2, 1/4 or 1/8 scale
     that best covers the target, then `scaleCover` for the exact size.
   - Caches the last 8 decoded images in PSRAM (a screen of thumbnails plus the viewer image).
+  - `remove` (`DELETE_FILE`) deletes the photo, its preview and its cached images, since a later
+    photo can reuse the name (`IMG_0001.jpg`). The site drops its cached thumbnail too.
   - `jpg2rgb565` outputs native little-endian `uint16_t` pixels. Swapping the bytes scrambles
     photos into green and colored noise, which happened once. `make hwtest` measures the decode's
     roughness (the mean difference between neighboring pixels): correct photos score about 1,
     scrambled ones 5 to 12, and the threshold is 3.
 
   Verified on the board with a microSD card: capture at 2048×1536, newest-first `LIST`,
-  download, and on-device decode to 64×64 and 240×212 matching the original photo.
+  download, and on-device decode to 64×64 and 240×212 matching the original photo. `make hwtest`
+  also checks that a new photo shows from its preview (under 0.5 s) and that delete removes the photo
+  and its preview.
   `LIST` and `PHOTO_PIXELS` already use it, so `make hwtest` exercises the same SD code the device
   UI will use once the display is wired.
 - **SD card:** SPI, CS = GPIO21 (shared with the user LED, so the LED is unused). With no card,
@@ -348,6 +359,8 @@ interface CameraSource {
   capture(): Promise<FileEntry>;
   listFiles(): Promise<FileEntry[]>;
   getFile(name: string): Promise<Blob>;
+  deleteFile(name: string): Promise<void>; // the photo and its preview
+  getPixels(name: string, width: number, height: number): Promise<Uint16Array>; // RGB565, as the device UI shows it
 }
 ```
 
@@ -363,10 +376,10 @@ and not keep a reference.
 │ ┌───────────────────────────────┐           │
 │ │                          [◉]  │           │  LiveView: shutter,
 │ │                          [⇋]  │           │  horizontal flip,
-│ │   live view (1920×1080)  [⇅]  │           │  vertical flip
+│ │   live view (480×480)    [⇅]  │           │  vertical flip
 │ │                           ↘   │           │  resize handle (360–1280px)
 │ └───────────────────────────────┘           │
-│ [1920×1080 ▾] [15 fps ▾]     15 fps actual  │
+│ [480×480 ▾]   [15 fps ▾]     15 fps actual  │
 ├─────────────────────────────────────────────┤
 │ Photos (3)                       [Refresh]  │  FileList
 │  20260921-142305.jpg   11 KB   2:23 PM      │
@@ -406,23 +419,25 @@ The full rules live in `CLAUDE.md`. In short:
 **Phase 1b: USB**
 10. [x] Firmware: stream `FRAME` packets over USB CDC, `MIRROR` → `set_hmirror`, `RESOLUTION`, `FPS`
 11. [x] `protocol.ts` + `SerialSource`, live view from the real camera (stream verified with `make hwtest`)
-12. [x] Firmware: `CAPTURE` to SD, `LIST`, `GET_FILE`, `SET_TIME` (SD path untested on hardware: no card inserted yet)
+12. [x] Firmware: `CAPTURE` to SD, `LIST`, `GET_FILE`, `SET_TIME` (verified on the board with a microSD card)
 13. [x] `make flash` / `make upload`, `make hwtest`, firmware image + manifest exported to the site
-14. [x] Flash firmware from the site over WebSerial (esptool-js, using `/firmware/manifest.json`); real-board flash pending
-15. [x] Photos at the sensor's best resolution (QXGA on OV3660), whatever the stream size (untested on hardware: needs an SD card)
-16. [x] Resizable viewer (↘ handle, 360–1280px), vertical flip (`VFLIP`), 1920×1080 default with fallback
+14. [x] Flash firmware from the site over WebSerial (esptool-js, using `/firmware/manifest.json`); used on the real board
+15. [x] Photos at the sensor's best resolution (QXGA on OV3660), whatever the stream size (2048×1536 verified on the board)
+16. [x] Resizable viewer (↘ handle, 360–1280px), vertical flip (`VFLIP`), default resolution with fallback
 17. [x] Wii-inspired device UI (`docs/wii-theme.md`): research, CLI mockups, portable C++ UI + ST7789
     driver/emulator, `make uitest`/`ui-preview`/`wasm`, site **Device** tab
 18. [x] Device UI: full-screen camera (Center shoot, A flash, B back), Grid + 12h/24h clock settings,
     flash ring around the emulated display; both site pages centered, emulator controls below the display
+19. [x] Emulator Pictures page from the board's SD card (`SdPhotoLibrary`, `PHOTO_PIXELS`), viewer
+    with Back and Delete (red Confirm, `DELETE_FILE`), ready-made 240×180 previews, 480×480 default
 
 **Phase 2: device + deploy**
-19. [ ] Wire the ST7789 + 5-way switch and run `ui::Ui` on the device (a `SpiBus` over Arduino `SPI`
+20. [ ] Wire the ST7789 + 5-way switch and run `ui::Ui` on the device (a `SpiBus` over Arduino `SPI`
     + DC pin); Camera page shows the live sensor preview and the shutter takes real photos
-20. [ ] Pictures page shows real SD photos (thumbnails, full view); battery level (`Link::Battery`)
-21. [ ] Deploy to `camera.nirvek.xyz`: run `./start.sh` on the Proxmox host, add the tunnel
+21. [ ] Pictures page shows real SD photos (thumbnails, full view); battery level (`Link::Battery`)
+22. [ ] Deploy to `camera.nirvek.xyz`: run `./start.sh` on the Proxmox host, add the tunnel
     hostname → `http://<host>:8888` (fix the garbled `cloudflare-domain-setup.md` first)
-22. [ ] Date range filter, camera animations (README step 3)
+23. [ ] Date range filter, camera animations (README step 3)
 
 **Phase 3: features**
 - [ ] WiFi transport (`WifiSource`)

@@ -23,6 +23,7 @@ export interface CameraSource {
   capture(): Promise<FileEntry>; // at the camera's best resolution and quality
   listFiles(): Promise<FileEntry[]>;
   getFile(name: string): Promise<Blob>;
+  deleteFile(name: string): Promise<void>; // from the SD card (and its preview)
   /** A photo center-cropped and scaled to width x height RGB565, as the device UI shows it. */
   getPixels(name: string, width: number, height: number): Promise<Uint16Array>;
 }
