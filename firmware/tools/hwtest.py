@@ -169,6 +169,11 @@ def main():
             pixels = struct.unpack_from(f"<{w * h}H", data, 4)
             if len(set(pixels)) < 8:
                 raise AssertionError(f"{w}x{h}: {len(set(pixels))} distinct colors, looks undecoded")
+            # Photos are smooth; byte-swapped or garbled RGB565 is noise (measured: ~1 vs ~10+).
+            green = [(p >> 5) & 63 for p in pixels]
+            rough = sum(abs(green[i] - green[i + 1]) for i in range(len(green) - 1) if (i + 1) % w) / len(green)
+            if rough > 3:
+                raise AssertionError(f"{w}x{h}: pixels look scrambled (roughness {rough:.1f}, byte order?)")
         return f"{name} → 64×64 and 240×212 RGB565"
     check("SD photo decoded on the device", decoded_on_device)
     check("stream off", lambda: cam.request(STREAM, b"\x00") and None)

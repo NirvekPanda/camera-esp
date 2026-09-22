@@ -52,12 +52,9 @@ bool SdPhotoLibrary::decode(const char* name, int w, int h, uint16_t* out) {
   uint8_t* rgb = static_cast<uint8_t*>(heap_caps_malloc(size_t(dw) * dh * 2, MALLOC_CAP_SPIRAM));
   bool ok = rgb && jpg2rgb565(jpeg, length, rgb, jpgScale);
   free(jpeg);
-  if (ok) {
-    // jpg2rgb565 writes big-endian pixels (panel order); make them native uint16_t in place.
-    uint16_t* px = reinterpret_cast<uint16_t*>(rgb);
-    for (int i = 0; i < dw * dh; i++) px[i] = uint16_t(rgb[2 * i] << 8 | rgb[2 * i + 1]);
-    ui::scaleCover(px, dw, dh, out, w, h);
-  }
+  // jpg2rgb565 writes native (little-endian) uint16_t pixels: use them as they are. Verified on the
+  // board (make hwtest's roughness check): swapping the bytes scrambles the image into noise.
+  if (ok) ui::scaleCover(reinterpret_cast<uint16_t*>(rgb), dw, dh, out, w, h);
   free(rgb);
   return ok;
 }

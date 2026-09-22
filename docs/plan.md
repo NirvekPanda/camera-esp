@@ -300,7 +300,13 @@ firmware/
   - Decodes JPEGs with the camera library's `jpg2rgb565`, using its built-in 1/2, 1/4 or 1/8 scale
     that best covers the target, then `scaleCover` for the exact size.
   - Caches the last 8 decoded images in PSRAM (a screen of thumbnails plus the viewer image).
+  - `jpg2rgb565` outputs native little-endian `uint16_t` pixels. Swapping the bytes scrambles
+    photos into green and colored noise, which happened once. `make hwtest` measures the decode's
+    roughness (the mean difference between neighboring pixels): correct photos score about 1,
+    scrambled ones 5 to 12, and the threshold is 3.
 
+  Verified on the board with a microSD card: capture at 2048×1536, newest-first `LIST`,
+  download, and on-device decode to 64×64 and 240×212 matching the original photo.
   `LIST` and `PHOTO_PIXELS` already use it, so `make hwtest` exercises the same SD code the device
   UI will use once the display is wired.
 - **SD card:** SPI, CS = GPIO21 (shared with the user LED, so the LED is unused). With no card,
