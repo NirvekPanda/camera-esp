@@ -35,6 +35,24 @@ const onPictures = async (page: Page) => {
   return back.every((v) => v === 255) && content.every((v, i) => v === BG[i]);
 };
 
+// The viewer's Delete button, bottom-right (the Pictures page has no primary button).
+const onViewer = async (page: Page) => (await pixel(page, 194, 214)).every((v) => v === 255);
+
+// Pictures, not the viewer: onPictures alone also matches a viewer whose image isn't loaded, and
+// onViewer alone reads false while Delete shows a red Confirm.
+const backOnPictures = async (page: Page) => (await onPictures(page)) && !(await onViewer(page));
+
+// Enter from Pictures until the viewer is open: presses are ignored while the page's opening zoom
+// plays, and a pixel check can't tell when it ends. Extra presses do nothing in the viewer.
+async function openViewer(page: Page) {
+  await expect
+    .poll(async () => {
+      await page.keyboard.press("Enter");
+      return onViewer(page);
+    })
+    .toBe(true);
+}
+
 async function openDeviceTab(page: Page) {
   await page.getByRole("link", { name: "Device" }).click();
   await expect(page).toHaveURL(/\/device\/$/);
@@ -167,6 +185,22 @@ test("shows the USB icon while the camera is connected over WebSerial", async ({
   await expect(page.getByRole("status")).toHaveText("connected"); // the connection survived the tab switch
 });
 
+test("Delete, then Confirm, deletes a mock camera's photo", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("Camera source").selectOption({ label: "Mock: test pattern" });
+  await page.getByRole("button", { name: "Connect" }).click();
+  await page.getByRole("button", { name: "Take picture" }).click();
+  await expect(page.getByRole("heading", { name: "Photos (1)" })).toBeVisible();
+  await openDeviceTab(page);
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("Enter"); // Pictures
+  await openViewer(page);
+  for (const key of ["ArrowDown", "ArrowRight", "Enter", "Enter"]) await page.keyboard.press(key); // Delete, Confirm
+  await expect.poll(() => backOnPictures(page)).toBe(true); // the photo is gone
+  await page.getByRole("link", { name: "Camera" }).click();
+  await expect(page.getByRole("heading", { name: "Photos (0)" })).toBeVisible();
+});
+
 test("the Camera app shows the connected camera's live stream", async ({ page }) => {
   await page.addInitScript({ path: path.join(__dirname, "fake-serial-device.js") });
   await page.goto("/");
@@ -236,7 +270,7 @@ test.describe("Pictures page with the camera's SD card", () => {
     await page.keyboard.press("Enter"); // Pictures (the thumbnail fails: a tile)
     await expect.poll(() => onPictures(page)).toBe(true); // opened (input is ignored while zooming)
     await page.keyboard.press("Enter"); // viewer (the image fails)
-    await expect.poll(() => onPictures(page)).toBe(false);
+    await expect.poll(() => onViewer(page)).toBe(true);
     await page.waitForTimeout(1500);
     const requests = await page.evaluate(
       () => (window as unknown as { fakeCamera: { commands: number[] } }).fakeCamera.commands.filter((c) => c === 0x8a).length,
@@ -254,8 +288,32 @@ test.describe("Pictures page with the camera's SD card", () => {
     await page.keyboard.press("b");
     await page.keyboard.press("ArrowRight");
     await page.keyboard.press("Enter"); // Pictures
-    await expect.poll(async () => isGreen(await pixel(page, 12 + 44, 38 + 32))).toBe(true);
+    // On Pictures with the new photo's thumbnail. The keys land before the next frame is drawn, so
+    // the thumbnail pixel alone could still be the camera's green live view.
+    await expect.poll(async () => (await onPictures(page)) && isGreen(await pixel(page, 12 + 44, 38 + 32))).toBe(true);
     await page.getByRole("link", { name: "Camera" }).click();
     await expect(page.getByRole("heading", { name: "Photos (1)" })).toBeVisible(); // same photo, same list
+  });
+
+  test("Delete, then Confirm, deletes the photo on the board", async ({ page }) => {
+    await page.getByRole("button", { name: "Connect" }).click();
+    await page.getByRole("button", { name: "Take picture" }).click();
+    await expect(page.getByRole("heading", { name: "Photos (1)" })).toBeVisible();
+    await openDeviceTab(page);
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("Enter"); // Pictures
+    await expect.poll(async () => isGreen(await pixel(page, 12 + 44, 38 + 32))).toBe(true);
+    await openViewer(page);
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("Enter"); // Delete: turns into a red Confirm
+    await expect.poll(async () => isRed(await pixel(page, 194, 214))).toBe(true);
+    const files = () => page.evaluate(() => (window as unknown as { fakeCamera: { files: Map<string, Uint8Array> } }).fakeCamera.files.size);
+    expect(await files()).toBe(1);
+    await page.keyboard.press("Enter"); // Confirm
+    await expect.poll(files).toBe(0);
+    await expect.poll(() => backOnPictures(page)).toBe(true); // nothing left to view
+    await page.getByRole("link", { name: "Camera" }).click();
+    await expect(page.getByRole("heading", { name: "Photos (0)" })).toBeVisible();
   });
 });

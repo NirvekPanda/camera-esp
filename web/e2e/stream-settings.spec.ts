@@ -20,8 +20,8 @@ test.beforeEach(async ({ page }) => {
   await page.goto("/");
 });
 
-test("defaults to 1920×1080 at 15 fps", async ({ page }) => {
-  await expect(page.getByLabel("Resolution")).toHaveValue("1920x1080");
+test("defaults to 480×480 at 15 fps", async ({ page }) => {
+  await expect(page.getByLabel("Resolution")).toHaveValue("480x480");
   await expect(page.getByLabel("Frame rate")).toHaveValue("15");
 });
 

@@ -1,13 +1,17 @@
 #pragma once
 
 #include <photos.h>  // firmware/lib/ui
+#include <stddef.h>
 
 // The photos in /photos on the microSD card, for the device UI's Pictures page and for the site
-// (LIST, PHOTO_PIXELS). Decoding a full-resolution JPEG takes far longer than a frame, so decoded
-// images are cached in PSRAM: the UI asks for the same thumbnails every frame.
+// (LIST, PHOTO_PIXELS, DELETE_FILE). Every photo gets a ready-made preview with the same name,
+// /photos/previews/<name>.rgb: 240x180 RGB565 (little-endian, no header), so showing a photo is an
+// SD read instead of a full-resolution JPEG decode. Results are also cached in PSRAM, since the UI
+// asks for the same thumbnails every frame.
 class SdPhotoLibrary : public ui::PhotoLibrary {
  public:
   static constexpr int MAX = 128;
+  static constexpr int PREVIEW_W = 240, PREVIEW_H = 180;  // the photo's 4:3, screen-sized
 
   // Rescans the card. False if there's no card or no /photos folder.
   bool refresh();
@@ -17,8 +21,12 @@ class SdPhotoLibrary : public ui::PhotoLibrary {
   const char* name(int index) override { return names_[index]; }
   bool pixels(int index, int w, int h, uint16_t* out) override;
 
-  // Decodes a photo by file name, center-cropped and scaled to w x h RGB565 (uncached).
+  // A photo by file name, center-cropped and scaled to w x h RGB565 (from its preview; uncached).
   static bool decode(const char* name, int w, int h, uint16_t* out);
+  // Makes and saves the preview for a photo from its JPEG (right after capture: no re-read).
+  static bool savePreview(const char* name, const uint8_t* jpeg, size_t length);
+  // Deletes a photo (a name refresh() would list), its preview and its cached thumbnails.
+  bool remove(const char* name);
 
  private:
   struct Cached {

@@ -11,6 +11,7 @@ import {
   PREVIEW_Y,
   Screen,
   THUMB_SIZE,
+  VIEWER_H,
   createDeviceUi,
 } from "./device-ui";
 import { rgb565ToRgba, rgbaToRgb565 } from "./rgb565";
@@ -145,10 +146,26 @@ describe("createDeviceUi (real WASM build)", () => {
     ui.press(Button.Center); // view photo 0
     ui.frame(16);
     expect(ui.wantedImage()).toBe(0); // the viewer asks for it
-    ui.setImage(0, new Uint16Array(PREVIEW_W * PREVIEW_H).fill(0xf800)); // red
+    ui.setImage(0, new Uint16Array(PANEL_SIZE * VIEWER_H).fill(0xf800)); // red
     panel = ui.frame(16);
     expect(ui.wantedImage()).toBe(-1);
     expect(panel[(PREVIEW_Y + 100) * PANEL_SIZE + 120]).toBe(0xf800);
+  });
+
+  it("a confirmed delete is handed to the page", async () => {
+    const ui = await createDeviceUi(wasm);
+    ui.setPhotos(["20260621-094107.jpg"]);
+    ui.press(Button.Right);
+    ui.press(Button.Center);
+    ui.frame(300); // Pictures
+    ui.press(Button.Center); // viewer
+    ui.press(Button.Down);
+    ui.press(Button.Right);
+    ui.press(Button.Center); // Delete: turns into Confirm
+    expect(ui.takeDeleteRequest()).toBeNull();
+    ui.press(Button.Center); // Confirm
+    expect(ui.takeDeleteRequest()).toBe("20260621-094107.jpg");
+    expect(ui.takeDeleteRequest()).toBeNull();
   });
 
   it("shutter presses are handed to the page to save photos", async () => {

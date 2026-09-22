@@ -12,6 +12,7 @@ declare global {
     fakeCamera: {
       silent: boolean;
       dropNextReply: boolean;
+      wrongNextReply: boolean;
       oldFirmware: boolean;
       streaming: boolean;
       sensor: "OV3660" | "OV2640";
@@ -73,17 +74,18 @@ test("applies resolution, fps and mirror on the device", async ({ page }) => {
   await expect.poll(() => page.evaluate(() => window.fakeCamera.vflip)).toBe(true);
 });
 
-test("streams the 1920×1080 default on an OV3660", async ({ page }) => {
+test("streams the 480×480 default (VGA frames, center-cropped)", async ({ page }) => {
   await connectUsb(page);
-  expect(await page.evaluate(() => window.fakeCamera.size)).toEqual([1920, 1080]);
-  await expect(page.getByLabel("Resolution")).toHaveValue("1920x1080");
+  expect(await page.evaluate(() => window.fakeCamera.size)).toEqual([640, 480]);
+  await expect(page.getByLabel("Resolution")).toHaveValue("480x480");
   await expect(errorBanner(page)).toHaveCount(0);
 });
 
-test("an OV2640 connects at 240×240 when it can't do the 1920×1080 default", async ({ page }) => {
+test("an OV2640 connects at 240×240 when it can't do the 1920×1080 chosen before connecting", async ({ page }) => {
   await page.evaluate(() => {
     window.fakeCamera.sensor = "OV2640";
   });
+  await page.getByLabel("Resolution").selectOption("1920x1080");
   await connectUsb(page);
   expect(await page.evaluate(() => window.fakeCamera.size)).toEqual([240, 240]);
   await expect(page.getByLabel("Resolution")).toHaveValue("240x240");
@@ -148,6 +150,16 @@ test("a lost reply disconnects cleanly instead of mismatching later replies", as
   await page.getByLabel("Frame rate").selectOption("10"); // queued behind it; must not take its reply
   await expect(page.getByRole("status")).toHaveText("disconnected", { timeout: 8000 });
   await expect(errorBanner(page)).toContainText("Camera stopped responding");
+});
+
+test("a reply of the wrong type disconnects instead of shifting every later reply", async ({ page }) => {
+  await connectUsb(page);
+  await page.evaluate(() => {
+    window.fakeCamera.wrongNextReply = true;
+  });
+  await page.getByLabel("Frame rate").selectOption("30");
+  await expect(page.getByRole("status")).toHaveText("disconnected");
+  await expect(errorBanner(page)).toContainText("Lost sync with the camera");
 });
 
 test("tells the user to reflash when the board runs older firmware", async ({ page }) => {

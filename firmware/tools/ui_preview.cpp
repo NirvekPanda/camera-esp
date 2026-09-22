@@ -91,7 +91,11 @@ int main() {
   pictures.press(Button::Right);
   show(pictures, "pictures", "Pictures");
   pictures.press(Button::Center);
-  show(pictures, "viewer", "Viewer (full screen; Left/Right step, B back)");
+  show(pictures, "viewer", "Viewer (photo focused; Left/Right step, Back and Delete below)");
+  pictures.press(Button::Down);
+  pictures.press(Button::Right);
+  pictures.press(Button::Center);
+  show(pictures, "viewer-confirm", "Delete pressed once: red Confirm");
   Ui settings = opened(2, Link::Usb);
   show(settings, "settings", "Settings");
   for (int i = 0; i < 3; i++) settings.press(Button::Down);

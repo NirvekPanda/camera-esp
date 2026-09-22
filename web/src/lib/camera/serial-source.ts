@@ -11,6 +11,7 @@ const REQUEST_TIMEOUT_MS = 5000;
 const FILE_TIMEOUT_MS = 30000;
 const NO_REPLY = "Camera stopped responding";
 const NO_FIRMWARE = "No camera firmware detected";
+const LOST_SYNC = "Lost sync with the camera";
 
 interface Waiter {
   expect: number;
@@ -137,6 +138,10 @@ export class SerialSource implements CameraSource {
     return new Blob([data], { type: "image/jpeg" });
   }
 
+  async deleteFile(name: string) {
+    await this.request(PacketType.DELETE_FILE, encoder.encode(name));
+  }
+
   /** Decoded on the camera (its SD card, its JPEG decoder): the same pixels its screen shows. */
   async getPixels(name: string, width: number, height: number) {
     const payload = new Uint8Array([...u16Pair(width, height), ...encoder.encode(name)]);
@@ -211,7 +216,12 @@ export class SerialSource implements CameraSource {
     const waiter = this.waiters.shift();
     if (!waiter) return;
     if (type === PacketType.ERROR) waiter.reject(deviceError(decoder.decode(payload)));
-    else if (type !== waiter.expect) waiter.reject(new Error(`Unexpected reply 0x${type.toString(16)}`));
+    else if (type !== waiter.expect) {
+      // Lost bytes shifted the replies: every later one would land on the wrong command too.
+      const error = new Error(LOST_SYNC);
+      waiter.reject(error);
+      this.fail(error);
+    }
     else waiter.resolve(payload);
   }
 

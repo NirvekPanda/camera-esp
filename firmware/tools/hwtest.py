@@ -16,7 +16,7 @@ from serial.tools import list_ports
 
 MAGIC = b"\xa5\x5a"
 FRAME, CAPTURED, FILE_LIST, FILE_DATA, OK, PIXELS, ERROR = 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x7F
-SET_TIME, CAPTURE, LIST, GET_FILE, STREAM, MIRROR, RESOLUTION, FPS, VFLIP, PHOTO_PIXELS = range(0x81, 0x8B)
+SET_TIME, CAPTURE, LIST, GET_FILE, STREAM, MIRROR, RESOLUTION, FPS, VFLIP, PHOTO_PIXELS, DELETE_FILE = range(0x81, 0x8C)
 USB_VENDOR_IDS = {0x303A, 0x2886}  # Espressif USB Serial/JTAG, Seeed
 
 # (requested, expected sensor frame): 480x480 and 720x720 arrive as VGA/HD for the site to crop.
@@ -59,7 +59,7 @@ class Camera:
             reply, data = self.packet(timeout)
             if reply == FRAME:
                 continue  # frames interleave with replies while streaming
-            if reply == ERROR:
+            if reply == ERROR and expect != ERROR:
                 raise DeviceError(data.decode(errors="replace"))
             if reply != expect:
                 raise AssertionError(f"expected reply 0x{expect:02x}, got 0x{reply:02x}")
@@ -162,7 +162,7 @@ def main():
     def decoded_on_device():
         # The device UI's Pictures page (thumbnails, viewer) decodes photos from the SD card itself.
         name = json.loads(cam.request(LIST, expect=FILE_LIST))[0]["name"]
-        for w, h in ((64, 64), (240, 212)):
+        for w, h in ((64, 64), (240, 177)):
             data = cam.request(PHOTO_PIXELS, struct.pack("<HH", w, h) + name.encode(), expect=PIXELS, timeout=30)
             if struct.unpack_from("<HH", data) != (w, h) or len(data) != 4 + w * h * 2:
                 raise AssertionError(f"{w}x{h}: got {len(data)} bytes")
@@ -174,8 +174,38 @@ def main():
             rough = sum(abs(green[i] - green[i + 1]) for i in range(len(green) - 1) if (i + 1) % w) / len(green)
             if rough > 3:
                 raise AssertionError(f"{w}x{h}: pixels look scrambled (roughness {rough:.1f}, byte order?)")
-        return f"{name} → 64×64 and 240×212 RGB565"
+        return f"{name} → 64×64 and 240×177 RGB565"
     check("SD photo decoded on the device", decoded_on_device)
+
+    taken = []  # photos this test takes and then deletes, never the user's
+
+    def preview_ready():
+        # Capture saves a 240x180 preview next to the photo, so showing it skips the full decode.
+        name = json.loads(cam.request(CAPTURE, expect=CAPTURED))["name"]
+        taken.append(name)
+        start = time.monotonic()
+        cam.request(PHOTO_PIXELS, struct.pack("<HH", 64, 64) + name.encode(), expect=PIXELS, timeout=30)
+        took = time.monotonic() - start
+        if took > 1:  # measured ~0.3 s from the preview; a full decode takes 2-4 s
+            raise AssertionError(f"{took:.2f} s: no ready-made preview?")
+        return f"{name} in {took * 1000:.0f} ms"
+    check("new photo shows from its preview", preview_ready)
+
+    def delete():
+        if not taken:
+            raise AssertionError("no test photo to delete")
+        name = taken[0]
+        cam.request(DELETE_FILE, name.encode())
+        if any(f["name"] == name for f in json.loads(cam.request(LIST, expect=FILE_LIST))):
+            raise AssertionError(f"{name} is still listed")
+        cam.request(GET_FILE, name.encode(), expect=ERROR)
+        # Pixels come from the preview first: an error means the preview is gone too.
+        cam.request(PHOTO_PIXELS, struct.pack("<HH", 64, 64) + name.encode(), expect=ERROR)
+        cam.request(DELETE_FILE, name.encode(), expect=ERROR)
+        for bad in (b"", b"previews", b"../x.jpg", b"previews\\x.jpg"):  # never a folder or a path
+            cam.request(DELETE_FILE, bad, expect=ERROR)
+        return f"{name}: photo and preview"
+    check("delete", delete)
     check("stream off", lambda: cam.request(STREAM, b"\x00") and None)
 
     print("\nAll checks passed." if not failures else f"\n{failures} check(s) failed.")

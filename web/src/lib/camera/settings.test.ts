@@ -12,10 +12,10 @@ import {
 } from "./settings";
 
 describe("resolutions", () => {
-  it("includes the square sizes and defaults to 1920×1080", () => {
+  it("includes the square sizes and defaults to 480×480", () => {
     const keys = RESOLUTIONS.map(resolutionKey);
     expect(keys).toEqual(expect.arrayContaining(["240x240", "480x480", "720x720"]));
-    expect(resolutionKey(DEFAULT_RESOLUTION)).toBe("1920x1080");
+    expect(resolutionKey(DEFAULT_RESOLUTION)).toBe("480x480");
   });
 
   it("falls back to the 240×240 display size every sensor supports", () => {

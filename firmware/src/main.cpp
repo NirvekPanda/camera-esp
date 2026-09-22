@@ -174,6 +174,8 @@ void capture() {
   size_t size = fb->len;
   bool written = file && file.write(fb->buf, size) == size;
   file.close();
+  // The ready-made preview, from the JPEG still in memory; without one it's made on first view.
+  if (written) SdPhotoLibrary::savePreview(name.c_str(), fb->buf, size);
   esp_camera_fb_return(fb);
   resumeStream();
   if (!written) {
@@ -235,6 +237,12 @@ void sendFile(const char* name) {
   file.close();
 }
 
+void deletePhoto(const char* name) {
+  if (!sdReady) return sendError("No SD card");
+  if (!library.remove(name)) return sendError(String("File not found: ") + name);
+  ok();
+}
+
 void handle(uint8_t type, const uint8_t* payload, uint32_t length) {
   switch (type) {
     case SET_TIME: {
@@ -250,6 +258,8 @@ void handle(uint8_t type, const uint8_t* payload, uint32_t length) {
       return sendFile(reinterpret_cast<const char*>(payload));
     case PHOTO_PIXELS:
       return sendPhotoPixels(payload, length);
+    case DELETE_FILE:
+      return deletePhoto(reinterpret_cast<const char*>(payload));
   }
 
   // The rest need the camera.
@@ -284,15 +294,22 @@ void handle(uint8_t type, const uint8_t* payload, uint32_t length) {
 
 void setup() {
   Serial.setTxBufferSize(16 * 1024);  // frames are ~5-200 KB; a bigger buffer keeps USB busy
-  Serial.begin(115200);               // USB CDC: the baud rate is ignored
+  // Commands queue up while a photo decodes; the default 256 bytes overflows and drops them.
+  Serial.setRxBufferSize(4096);
+  // A browser can pause reading for longer than the default 100 ms (GC, a busy tab). A write that
+  // times out drops bytes mid-packet and desyncs the site, so wait longer.
+  Serial.setTxTimeoutMs(1000);
+  Serial.begin(115200);  // USB CDC: the baud rate is ignored
   initCamera();
-  sdReady = SD.begin(SD_CS_GPIO_NUM) && (SD.exists(PHOTO_DIR) || SD.mkdir(PHOTO_DIR));
+  sdReady = SD.begin(SD_CS_GPIO_NUM, SPI, 20000000) &&  // 20 MHz: the 4 MHz default makes a preview read ~0.4 s
+            (SD.exists(PHOTO_DIR) || SD.mkdir(PHOTO_DIR));
 }
 
 void loop() {
   while (Serial.available()) {
     if (parser.feed(Serial.read())) handle(parser.type, parser.payload, parser.length);
   }
+  parser.dropStale(millis());
   if (streaming && millis() - lastFrameMs >= frameIntervalMs) {
     lastFrameMs = millis();
     if (camera_fb_t* fb = esp_camera_fb_get()) {

@@ -22,6 +22,7 @@ constexpr uint16_t tile = rgb565(0xFF, 0xFF, 0xFF);
 constexpr uint16_t text = rgb565(0x70, 0x77, 0x80);
 constexpr uint16_t accent = rgb565(0x34, 0xBE, 0xED);
 constexpr uint16_t ink = rgb565(0x3A, 0x40, 0x48);
+constexpr uint16_t danger = rgb565(0xE5, 0x39, 0x35);  // an armed Delete (Confirm)
 constexpr uint16_t black = 0x0000;
 constexpr uint16_t white = 0xFFFF;
 }  // namespace color

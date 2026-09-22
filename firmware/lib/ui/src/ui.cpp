@@ -7,6 +7,7 @@ namespace {
 constexpr int BAR_H = 27;       // nav bar; its divider is the row below
 constexpr int BOTTOM_Y = 206;   // bottom bar; its divider is the row above
 constexpr Rect CONTENT = {0, BAR_H + 1, WIDTH, BOTTOM_Y - BAR_H - 2};
+static_assert(CONTENT.y == PREVIEW_Y && CONTENT.h == VIEWER_H, "the viewer fills the content area");
 // Bottom bar buttons: Back always bottom-left, the primary action always bottom-right.
 constexpr Rect BACK_BUTTON = {8, BOTTOM_Y + 5, 76, 24};
 constexpr Rect PRIMARY_BUTTON = {WIDTH - 8 - 76, BOTTOM_Y + 5, 76, 24};
@@ -150,7 +151,7 @@ int Ui::focus() const {
     case Screen::Camera: return 0;  // nothing focusable: the camera is full-screen
     case Screen::Pictures: return photoFocus_;
     case Screen::Settings: return settingFocus_;
-    case Screen::Viewer: return photoFocus_;  // the photo being viewed
+    case Screen::Viewer: return viewerFocus_ ? viewerFocus_ : photoFocus_;  // the photo, or a button
     default: return homeFocus_;
   }
 }
@@ -174,8 +175,17 @@ void Ui::pressCamera(Button b) {
 }
 
 void Ui::back() {
+  confirmDelete_ = false;
   if (screen_ == Screen::Camera) preview_ = nullptr;  // never reopen on a stale frame
+  viewerFocus_ = 0;
   screen_ = screen_ == Screen::Viewer ? Screen::Pictures : Screen::Home;
+}
+
+bool Ui::takeDeleteRequest(char* out) {
+  if (!deleteRequest_[0]) return false;
+  for (int k = 0; k < PHOTO_NAME_MAX; k++) out[k] = deleteRequest_[k];
+  deleteRequest_[0] = 0;
+  return true;
 }
 
 void Ui::pressHome(Button b) {
@@ -217,23 +227,44 @@ void Ui::pressPage(Button b) {
       if (b == Button::Down) settingFocus_ = settingFocus_ == BACK || settingFocus_ == SETTING_COUNT - 1 ? BACK : settingFocus_ + 1;
       if (b == Button::Up) settingFocus_ = settingFocus_ == BACK ? SETTING_COUNT - 1 : settingFocus_ > 0 ? settingFocus_ - 1 : 0;
       return;
-    default:  // Viewer: Left/Right step through the photos
-      if (b == Button::Left && photoFocus_ > 0) photoFocus_--;
-      if (b == Button::Right && photoFocus_ < photoCount() - 1) photoFocus_++;
-      lastPhoto_ = photoFocus_;
-      rememberPhoto();
+    default:  // Viewer: the photo (Left/Right step through photos), then Back and Delete below
+      if (viewerFocus_ == 0) {
+        if (b == Button::Left && photoFocus_ > 0) photoFocus_--;
+        if (b == Button::Right && photoFocus_ < photoCount() - 1) photoFocus_++;
+        if (b == Button::Down) viewerFocus_ = BACK;
+        lastPhoto_ = photoFocus_;
+        rememberPhoto();
+      } else {
+        if (b == Button::Left) viewerFocus_ = BACK;
+        if (b == Button::Right) viewerFocus_ = PRIMARY;
+        if (b == Button::Up) viewerFocus_ = 0;
+      }
+      if (viewerFocus_ != PRIMARY) confirmDelete_ = false;  // Confirm lasts while it has focus
       return;
   }
 }
 
 // Center/A activate whatever is focused, on every page.
 void Ui::activate() {
-  if (screen_ == Screen::Viewer) return;  // the focused photo is already open
+  if (screen_ == Screen::Viewer) {
+    if (viewerFocus_ == BACK) {
+      back();
+    } else if (viewerFocus_ == PRIMARY && !confirmDelete_) {
+      confirmDelete_ = true;  // Delete turns into Confirm: a second press deletes
+    } else if (viewerFocus_ == PRIMARY) {  // confirmed: the host deletes it
+      rememberPhoto();
+      for (int k = 0; k < PHOTO_NAME_MAX; k++) deleteRequest_[k] = focusedPhoto_[k];
+      confirmDelete_ = false;
+      viewerFocus_ = 0;
+    }
+    return;  // the photo itself is already open
+  }
   if (screen_ == Screen::Pictures) clampPhotoFocus();  // the card may have changed
   if (focus() == BACK) return back();
   switch (screen_) {
     case Screen::Pictures:
       screen_ = Screen::Viewer;
+      viewerFocus_ = 0;
       return;
     case Screen::Settings:
       if (settingFocus_ == 0) resolution_ = (resolution_ + 1) % RESOLUTION_COUNT;
@@ -287,7 +318,8 @@ void Ui::libraryChanged() {
       return;
     }
   }
-  if (screen_ == Screen::Viewer && photos == 0) screen_ = Screen::Pictures;  // the photo is gone
+  confirmDelete_ = false;  // Confirm was for the photo that's gone: never carry it to another
+  if (screen_ == Screen::Viewer && photos == 0) screen_ = Screen::Pictures;
   clampPhotoFocus();
 }
 
@@ -318,27 +350,27 @@ void Ui::render(Framebuffer& fb) const {
     case Screen::Camera: return;  // full-screen picture: no bottom bar
     case Screen::Pictures: return renderBottomBar(fb, photoFocus_, nullptr);
     case Screen::Settings: return renderBottomBar(fb, settingFocus_, nullptr);
-    case Screen::Viewer: return;  // full-screen photo: B goes back to the gallery
+    case Screen::Viewer: return renderBottomBar(fb, focus(), confirmDelete_ ? "Confirm" : "Delete", confirmDelete_);
     default: return renderBottomBar(fb, 0, nullptr);  // Home: the page dots live in the bar
   }
 }
 
-void Ui::renderBottomBar(Framebuffer& fb, int focus, const char* primary) const {
+void Ui::renderBottomBar(Framebuffer& fb, int focus, const char* primary, bool danger) const {
   fb.fillRect({0, BOTTOM_Y, WIDTH, HEIGHT - BOTTOM_Y}, color::bar);
   fb.fillRect({0, BOTTOM_Y - 1, WIDTH, 1}, color::line);
-  auto button = [&](Rect r, const char* label, bool focused) {
-    fb.fillRoundRect(r, r.h / 2, color::tile);
+  auto button = [&](Rect r, const char* label, bool focused, bool red) {
+    fb.fillRoundRect(r, r.h / 2, red ? color::danger : color::tile);
     outline(fb, r, r.h / 2, focused);
     int w = Framebuffer::textWidth(fonts::small, label);
-    fb.drawText(fonts::small, r.x + (r.w - w) / 2, r.y + (r.h - fonts::small.height) / 2, label, color::ink);
+    fb.drawText(fonts::small, r.x + (r.w - w) / 2, r.y + (r.h - fonts::small.height) / 2, label, red ? color::white : color::ink);
   };
   if (screen_ == Screen::Home) {
     for (int i = 0; i < PAGE_COUNT; i++)
       fb.fillCircle(WIDTH / 2 + (i - 1) * 14, BOTTOM_Y + (HEIGHT - BOTTOM_Y) / 2, 3, i == homeFocus_ ? color::accent : color::line);
     return;
   }
-  button(BACK_BUTTON, "Back", focus == BACK);
-  if (primary) button(PRIMARY_BUTTON, primary, focus == PRIMARY);
+  button(BACK_BUTTON, "Back", focus == BACK, false);
+  if (primary) button(PRIMARY_BUTTON, primary, focus == PRIMARY, danger);
 }
 
 void Ui::renderNavBar(Framebuffer& fb, const char* title) const {
@@ -479,12 +511,13 @@ void Ui::renderSettings(Framebuffer& fb) const {
   }
 }
 
-void Ui::renderViewer(Framebuffer& fb) const {  // full screen, like the camera
-  // The picture area is PREVIEW_W x PREVIEW_H contiguous framebuffer rows: decode straight into it.
-  uint16_t* area = fb.pixels + PREVIEW_Y * WIDTH;
-  if (photoFocus_ >= photoCount() || !library_->pixels(photoFocus_, PREVIEW_W, PREVIEW_H, area)) {
-    fb.fillRect({0, PREVIEW_Y, PREVIEW_W, PREVIEW_H}, color::bg);  // still loading
+void Ui::renderViewer(Framebuffer& fb) const {
+  // The picture area is full-width contiguous framebuffer rows: decode straight into it.
+  const Rect area = {0, PREVIEW_Y, WIDTH, VIEWER_H};
+  if (photoFocus_ >= photoCount() || !library_->pixels(photoFocus_, WIDTH, VIEWER_H, fb.pixels + area.y * WIDTH)) {
+    fb.fillRect(area, color::bg);  // still loading
   }
+  if (viewerFocus_ == 0) outline(fb, area, 0, true);  // the photo has focus
 }
 
 }  // namespace ui
