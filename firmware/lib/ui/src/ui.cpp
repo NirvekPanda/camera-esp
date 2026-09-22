@@ -29,6 +29,8 @@ const uint16_t BARS[] = {color::white, rgb565(0xFF, 0xFF, 0), rgb565(0, 0xFF, 0x
 const uint16_t THUMB_COLORS[] = {rgb565(0x8E, 0xC5, 0xE8), rgb565(0xF2, 0xB8, 0x8B), rgb565(0xA8, 0xD8, 0x9E),
                                  rgb565(0xD7, 0xB4, 0xE8), rgb565(0xF0, 0xD9, 0x8C)};
 constexpr uint16_t LOW_BATTERY = rgb565(0xE5, 0x48, 0x4D);
+const char* const MONTHS[12] = {"January", "February", "March",     "April",   "May",      "June",
+                                "July",    "August",   "September", "October", "November", "December"};
 
 int lerp(int a, int b, int t1024) { return a + (b - a) * t1024 / 1024; }
 int absInt(int v) { return v < 0 ? -v : v; }
@@ -125,13 +127,22 @@ void photoPlaceholder(Framebuffer& fb, Rect r, int index, int radius) {  // a su
   fb.fillRoundRect({r.x + r.w / 10, r.y + r.h * 6 / 10, r.w * 8 / 10, r.h * 3 / 10}, r.h / 8, color::tile);
 }
 
-void photoName(char (&name)[13], int index) {
-  const char base[] = "IMG_0000.jpg";
-  for (int i = 0; i < 13; i++) name[i] = base[i];
-  twoDigits(name + 6, (index + 1) % 100);
-}
-
 }  // namespace
+
+void photoDate(char* out, int year, int month, int day, int maxWidth) {
+  for (int shortMonth = 0; shortMonth < 2; shortMonth++) {
+    char* p = out;
+    const char* name = MONTHS[(month - 1) % 12];
+    for (int i = 0; name[i] && (!shortMonth || i < 3); i++) *p++ = name[i];
+    *p++ = ',', *p++ = ' ';
+    if (day >= 10) *p++ = char('0' + day / 10);
+    *p++ = char('0' + day % 10);
+    *p++ = ',', *p++ = ' ';
+    for (int div = 1000; div; div /= 10) *p++ = char('0' + year / div % 10);
+    *p = 0;
+    if (Framebuffer::textWidth(fonts::small, out) <= maxWidth) return;
+  }  // the short form is used even if it doesn't fit: never an empty title
+}
 
 int easeOut(uint32_t elapsed, uint32_t duration) {
   int t = int((elapsed < duration ? elapsed : duration) * 1024 / duration);
@@ -160,6 +171,7 @@ void Ui::press(Button b) {
 
 void Ui::pressCamera(Button b) {
   if (b == Button::Center && photos_ < MAX_PHOTOS) {  // shutter; the blink confirms a saved photo
+    shots_[photos_] = {today_.year, today_.month, today_.day, int16_t(minutes_)};
     photos_++;
     flashT_ = 0;
   }
@@ -260,12 +272,10 @@ void Ui::render(Framebuffer& fb) const {
     case Screen::Settings: renderSettings(fb); break;
     case Screen::Viewer: renderViewer(fb); break;
   }
-  char name[13];
-  photoName(name, photoFocus_);
-  // The camera shows an icon instead of a text title; Home has no title.
-  const char* title = screen_ == Screen::Home || screen_ == Screen::Camera ? nullptr
-                      : screen_ == Screen::Viewer                          ? name
-                                                                           : PAGE_NAMES[int(screen_) - 1];
+  // The camera shows an icon instead of a text title, the viewer the photo's date; Home has none.
+  const char* title = screen_ == Screen::Home || screen_ == Screen::Camera || screen_ == Screen::Viewer
+                          ? nullptr
+                          : PAGE_NAMES[int(screen_) - 1];
   renderNavBar(fb, title);
   switch (screen_) {
     case Screen::Camera: return;  // full-screen picture: no bottom bar
@@ -297,7 +307,16 @@ void Ui::renderBottomBar(Framebuffer& fb, int focus, const char* primary) const 
 void Ui::renderNavBar(Framebuffer& fb, const char* title) const {
   fb.fillRect({0, 0, WIDTH, BAR_H}, color::bar);
   fb.fillRect({0, BAR_H, WIDTH, 1}, color::line);
-  int hour = minutes_ / 60;
+  // Status icons first (right to left: USB or battery, then the flash), so the title knows its room.
+  int right = WIDTH - 6;
+  if (link_ == Link::Usb) right = drawUsb(fb, WIDTH - 32, BAR_H / 2) - 8;
+  if (link_ == Link::Battery) right = drawBattery(fb, WIDTH - 6, BAR_H / 2, battery_) - 8;
+  if (flashOn()) right = drawFlash(fb, right, BAR_H / 2) - 8;
+
+  // The viewer shows when the photo was taken: its time here and its date as the title.
+  const Shot* shot = screen_ == Screen::Viewer ? &shots_[photoFocus_] : nullptr;
+  int minutes = shot ? shot->minutes : minutes_;
+  int hour = minutes / 60;
   char clock[6], *p = clock;
   if (clock12_) {  // 12-hour: no leading zero, 0 and 12 read as 12
     int h12 = hour % 12 == 0 ? 12 : hour % 12;
@@ -307,10 +326,16 @@ void Ui::renderNavBar(Framebuffer& fb, const char* title) const {
     p = twoDigits(p, hour);
   }
   *p++ = ':';
-  *twoDigits(p, minutes_ % 60) = 0;
+  *twoDigits(p, minutes % 60) = 0;
   int x = fb.drawText(fonts::large, 8, 1, clock, color::text);
   if (clock12_) x = fb.drawText(fonts::small, x + 3, 9, hour < 12 ? "AM" : "PM", color::text);
   if (title) fb.drawText(fonts::small, x + 10, 6, title, color::ink);
+  if (shot) {
+    int dash = fb.drawText(fonts::small, x + 10, 6, "-", color::ink) + 5;
+    char date[24];
+    photoDate(date, shot->year, shot->month, shot->day, right - dash);
+    fb.drawText(fonts::small, dash, 6, date, color::ink);
+  }
   if (screen_ == Screen::Camera) {  // small camera icon in place of a title
     int ix = x + 10, iy = 8;
     fb.fillRect({ix + 5, iy, 6, 3}, color::ink);
@@ -318,11 +343,6 @@ void Ui::renderNavBar(Framebuffer& fb, const char* title) const {
     fb.fillCircle(ix + 8, iy + 7, 3, color::bar);
     fb.fillCircle(ix + 8, iy + 7, 1, color::ink);
   }
-  // Status icons, right to left: USB or battery, then the flash when it's on.
-  int right = WIDTH - 6;
-  if (link_ == Link::Usb) right = drawUsb(fb, WIDTH - 32, BAR_H / 2) - 8;
-  if (link_ == Link::Battery) right = drawBattery(fb, WIDTH - 6, BAR_H / 2, battery_) - 8;
-  if (flashOn()) drawFlash(fb, right, BAR_H / 2);
 }
 
 void Ui::renderHome(Framebuffer& fb) const {

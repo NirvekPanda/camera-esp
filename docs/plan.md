@@ -100,12 +100,13 @@ vendors (`0x303A`, `0x2886`).
     640×480 (VGA), 800×600 (SVGA), 1280×720 (HD), 1600×1200 (UXGA, OV2640 max) and 1920×1080 (FHD,
     OV3660/OV5640 only). The ESP32 camera driver has no 480×480 or 720×720 frame size, so the
     firmware streams VGA and HD for those, and the site center-crops the preview (`coverCrop`).
-    Photos are cropped on the device at capture time: decode to RGB888 in PSRAM, crop, re-encode
-    (`cropJpeg`, a few hundred ms). That's too slow per frame, which is why the stream isn't
-    cropped there.
+    Photos aren't cropped: they're full-resolution sensor frames (see *Photos* below), so the
+    framing can be applied when viewing.
   - Frame rates: 10, 15 (default), 24, 30 and 60 fps. This is a *target*. The UI shows the actual
     measured fps next to it, because USB caps high resolutions well below 60 fps (measured below).
-  - Photos are taken at the stream resolution. The viewport takes the stream's aspect ratio.
+  - **Photos always use the camera's best resolution and quality**, whatever the stream is set to:
+    2048×1536 (QXGA) on an OV3660, 1600×1200 (UXGA) on an OV2640, JPEG quality 10 (stream: 12).
+    The viewport takes the stream's aspect ratio.
   - **Default: 1920×1080.** If the camera rejects it on connect (an OV2640 tops out at UXGA), the
     site connects at 240×240 (`FALLBACK_RESOLUTION`, which every sensor supports) and shows the
     sensor's error rather than failing the connection.
@@ -271,9 +272,13 @@ firmware/
 
 ### Firmware
 
-- **Camera:** OV2640/OV3660 on the Sense board, JPEG quality 12, 2 frame buffers in PSRAM,
-  `CAMERA_GRAB_LATEST`. Buffers are allocated for UXGA at init (they can't grow later), then the
-  sensor drops to 240×240. FHD has about 8% more pixels than UXGA. That's fine for JPEG: a UXGA
+- **Camera:** OV2640/OV3660 on the Sense board, JPEG quality 12 for the stream, 2 frame buffers in
+  PSRAM, `CAMERA_GRAB_LATEST`. Buffers are sized at init and can't grow later, so they're sized
+  for the largest photo: UXGA first, and if the sensor is an OV3660, it restarts with QXGA
+  buffers.
+- **Photos (`CAPTURE`):** switch the sensor to its largest size and JPEG quality 10, skip the frames
+  still in the old size, save the full-resolution JPEG straight from the sensor (no re-encode),
+  then restore the stream size and quality. `make hwtest` checks the saved JPEG's dimensions. FHD has about 8% more pixels than UXGA. That's fine for JPEG: a UXGA
   JPEG buffer is about 384 KB, and measured FHD frames are about 61 KB. Allocating for FHD instead
   could fail init on an OV2640.
 - **Out-of-date firmware** answers new commands with `ERROR "Unknown command 0x.."`. The site
@@ -383,7 +388,7 @@ The full rules live in `CLAUDE.md`. In short:
 12. [x] Firmware: `CAPTURE` to SD, `LIST`, `GET_FILE`, `SET_TIME` (SD path untested on hardware: no card inserted yet)
 13. [x] `make flash` / `make upload`, `make hwtest`, firmware image + manifest exported to the site
 14. [x] Flash firmware from the site over WebSerial (esptool-js, using `/firmware/manifest.json`); real-board flash pending
-15. [x] Crop 480×480 / 720×720 photos on the device (untested on hardware: needs an SD card)
+15. [x] Photos at the sensor's best resolution (QXGA on OV3660), whatever the stream size (untested on hardware: needs an SD card)
 16. [x] Resizable viewer (↘ handle, 360–1280px), vertical flip (`VFLIP`), 1920×1080 default with fallback
 17. [x] Wii-inspired device UI (`docs/wii-theme.md`): research, CLI mockups, portable C++ UI + ST7789
     driver/emulator, `make uitest`/`ui-preview`/`wasm`, site **Device** tab

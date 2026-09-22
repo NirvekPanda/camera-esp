@@ -1,3 +1,4 @@
+import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
 async function connect(page: Page) {
@@ -31,13 +32,13 @@ test("lists square and common resolutions and the fps options", async ({ page })
   expect(rates).toEqual(expect.arrayContaining(["24 fps", "30 fps", "60 fps"]));
 });
 
-test("changing resolution resizes the stream, viewport and photos", async ({ page }) => {
+test("changing resolution resizes the stream and viewport; photos stay at the best resolution", async ({ page }) => {
   await connect(page);
   await page.getByLabel("Resolution").selectOption("1280x720");
   await expect.poll(() => canvasSize(page)).toEqual([1280, 720]);
   await expect.poll(() => viewportRatio(page)).toBeCloseTo(16 / 9, 1);
 
-  // Photo is taken at the stream resolution.
+  // Photos use the camera's best resolution (the pattern's 1920x1080), whatever the stream size.
   await page.waitForFunction(() => {
     const c = document.querySelector<HTMLCanvasElement>(".viewport canvas")!;
     return c.getContext("2d")!.getImageData(5, 5, 1, 1).data[3] === 255;
@@ -46,7 +47,7 @@ test("changing resolution resizes the stream, viewport and photos", async ({ pag
   await page.locator(".files li button").first().click();
   const img = page.getByRole("dialog").getByRole("img");
   await expect(img).toHaveJSProperty("complete", true);
-  expect(await img.evaluate((el: HTMLImageElement) => [el.naturalWidth, el.naturalHeight])).toEqual([1280, 720]);
+  expect(await img.evaluate((el: HTMLImageElement) => [el.naturalWidth, el.naturalHeight])).toEqual([1920, 1080]);
 });
 
 test("settings chosen before connecting are applied on connect", async ({ page }) => {
@@ -81,21 +82,17 @@ async function newestPhoto(page: Page) {
 }
 
 test("settings changed while connecting are applied to the camera", async ({ page }) => {
-  // Simulate a slow permission prompt so there's time to change settings mid-connect.
-  await page.addInitScript(() => {
-    const original = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
-    navigator.mediaDevices.getUserMedia = (constraints) =>
-      new Promise((resolve) => setTimeout(() => resolve(original(constraints)), 1500));
-  });
+  // The fake USB camera reports the stream size it was set to; a slow port stands in for the prompt.
+  await page.addInitScript({ path: path.join(__dirname, "fake-serial-device.js") });
   await page.goto("/");
-  await page.getByLabel("Camera source").selectOption({ label: "Mock: webcam" });
+  await page.evaluate(() => {
+    (window as unknown as { fakeCamera: { connectDelayMs: number } }).fakeCamera.connectDelayMs = 1500;
+  });
   await page.getByRole("button", { name: "Connect" }).click();
   await expect(page.getByRole("status")).toHaveText("connecting");
   await page.getByLabel("Resolution").selectOption("1280x720");
   await expect(page.getByRole("status")).toHaveText("connected");
-
-  await page.getByRole("button", { name: "Take picture" }).click();
-  expect((await newestPhoto(page)).size).toEqual([1280, 720]);
+  expect(await page.evaluate(() => (window as unknown as { fakeCamera: { size: number[] } }).fakeCamera.size)).toEqual([1280, 720]);
 });
 
 test("a photo taken right after a resolution change is not blank", async ({ page }) => {
@@ -104,7 +101,7 @@ test("a photo taken right after a resolution change is not blank", async ({ page
   await page.getByLabel("Resolution").selectOption("640x480");
   await page.getByRole("button", { name: "Take picture" }).click();
   const photo = await newestPhoto(page);
-  expect(photo.size).toEqual([640, 480]);
+  expect(photo.size).toEqual([1920, 1080]); // photos use the best resolution
   // Test pattern's first bar is white; a cleared canvas would be black.
   expect(Math.min(...photo.pixel)).toBeGreaterThan(200);
 });

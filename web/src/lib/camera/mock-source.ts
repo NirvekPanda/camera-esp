@@ -3,6 +3,7 @@ import { DEFAULT_FPS, DEFAULT_RESOLUTION, coverCrop, type Resolution } from "./s
 import type { CameraSource, FileEntry, FrameListener } from "./types";
 
 const BARS = ["#fff", "#ff0", "#0ff", "#0f0", "#f0f", "#f00", "#00f"];
+const PATTERN_PHOTO = { width: 1920, height: 1080 }; // the test pattern's "sensor" maximum
 
 // Module-level so photos survive reconnects, like a real SD card.
 const sdCard = new Map<string, Blob>();
@@ -94,9 +95,18 @@ export class MockSource implements CameraSource {
     if (this.timer !== null) this.startTimer();
   }
 
+  // Like the real camera, photos use the best resolution available, whatever the stream size:
+  // the webcam's native size, or the pattern's 1920×1080.
   async capture(): Promise<FileEntry> {
     if (this.timer === null) throw new Error("Camera is not connected");
-    const blob = await this.canvas.convertToBlob({ type: "image/jpeg", quality: 0.9 });
+    const { width, height } = this.video
+      ? { width: this.video.videoWidth, height: this.video.videoHeight }
+      : PATTERN_PHOTO;
+    const photo = new OffscreenCanvas(width, height);
+    const ctx = photo.getContext("2d");
+    if (!ctx) throw new Error("Canvas 2D is not supported");
+    this.draw(ctx);
+    const blob = await photo.convertToBlob({ type: "image/jpeg", quality: 0.92 });
     const base = photoName(new Date());
     let name = base;
     for (let i = 2; sdCard.has(name); i++) name = duplicateName(base, i);
@@ -133,27 +143,27 @@ export class MockSource implements CameraSource {
     frame.close();
   }
 
-  private draw() {
+  // Draws one frame into ctx's canvas, at that canvas's size (the stream or a photo).
+  private draw(ctx: OffscreenCanvasRenderingContext2D = this.ctx) {
     // Flip in the frame itself, like the sensor's hmirror/vflip, so photos match the preview.
-    const { width, height } = this.canvas;
-    this.ctx.setTransform(
+    const { width, height } = ctx.canvas;
+    ctx.setTransform(
       this.mirrored ? -1 : 1, 0, 0, this.vflip ? -1 : 1,
       this.mirrored ? width : 0, this.vflip ? height : 0,
     );
-    if (this.video) this.drawWebcam(this.video);
-    else this.drawPattern();
+    if (this.video) this.drawWebcam(ctx, this.video);
+    else this.drawPattern(ctx);
   }
 
   // Center-crop to the output aspect ratio, like the device's cropped frame sizes.
-  private drawWebcam(video: HTMLVideoElement) {
-    const { width, height } = this.canvas;
+  private drawWebcam(ctx: OffscreenCanvasRenderingContext2D, video: HTMLVideoElement) {
+    const { width, height } = ctx.canvas;
     const { sx, sy, sw, sh } = coverCrop(video.videoWidth, video.videoHeight, width, height);
-    this.ctx.drawImage(video, sx, sy, sw, sh, 0, 0, width, height);
+    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, width, height);
   }
 
-  private drawPattern() {
-    const { ctx } = this;
-    const { width, height } = this.canvas;
+  private drawPattern(ctx: OffscreenCanvasRenderingContext2D) {
+    const { width, height } = ctx.canvas;
     const barWidth = width / BARS.length;
     const barHeight = height * 0.7;
     const textSize = Math.round(height / 15);

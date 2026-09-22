@@ -424,6 +424,44 @@ TEST(mirror_and_flip_apply_to_the_live_preview) {
   CHECK_EQ(fb.at(PREVIEW_W - 1, HEIGHT - 1), frame[0]);
 }
 
+TEST(photo_date_format) {
+  char out[32];
+  photoDate(out, 2026, 6, 21, 1000);
+  CHECK(strcmp(out, "June, 21, 2026") == 0);
+  photoDate(out, 2026, 9, 3, 1000);
+  CHECK(strcmp(out, "September, 3, 2026") == 0);
+  photoDate(out, 2026, 9, 3, 60);  // not enough room for the full month
+  CHECK(strcmp(out, "Sep, 3, 2026") == 0);
+}
+
+TEST(viewer_nav_shows_when_the_photo_was_taken) {
+  Ui ui, clockAt941;
+  ui.setDate(2026, 6, 21);
+  ui.setTime(9 * 60 + 41);
+  openPage(ui, 0);
+  ui.press(Button::Center);  // photo taken at 09:41 on June 21
+  ui.tick(FLASH_MS);
+  ui.setTime(13 * 60);  // later
+  ui.press(Button::B);
+  ui.press(Button::Right);
+  ui.press(Button::Center);
+  ui.tick(OPEN_MS);
+  for (int i = 0; i < ui.photoCount(); i++) ui.press(Button::Right), ui.press(Button::Down);
+  ui.press(Button::Up);  // from Back to the newest photo
+  ui.press(Button::Center);
+  CHECK(ui.screen() == Screen::Viewer);
+  CHECK_EQ(ui.focus(), ui.photoCount() - 1);
+  ui.render(fb);
+  clockAt941.setTime(9 * 60 + 41);
+  clockAt941.render(fb2);
+  const Rect clock = {0, 0, 64, 27};
+  CHECK(sameRegion(fb, fb2, clock));             // the photo's time, not the current 13:00
+  CHECK(regionHas(fb, {70, 0, 120, 27}, color::ink));  // "- June, 21, 2026"
+  ui.press(Button::Left);                        // an older demo photo: another time
+  ui.render(fb2);
+  CHECK(!sameRegion(fb, fb2, {0, 0, WIDTH / 2 + 40, 27}));
+}
+
 TEST(camera_title_is_an_icon_not_a_label) {
   Ui camera, settings;
   openPage(camera, 0);

@@ -17,6 +17,7 @@
     silent: false, // true = no firmware: never replies
     dropNextReply: false, // true = lose the next reply, like bytes dropped on the USB link
     oldFirmware: false, // true = firmware from before VFLIP existed
+    connectDelayMs: 0, // a slow port (e.g. while the permission prompt is open)
     streaming: false,
     sensor: "OV3660", // or "OV2640"
     mirrored: false,
@@ -51,8 +52,7 @@
   const sendText = (type, text) => send(type, encoder.encode(text));
 
   // Left 25% red, rest green (blue when mirrored), so crops and mirroring are visible in pixels.
-  async function jpeg() {
-    const [w, h] = camera.size;
+  async function jpeg([w, h] = camera.size) {
     const canvas = new OffscreenCanvas(w, h);
     const ctx = canvas.getContext("2d");
     ctx.fillStyle = camera.mirrored ? "#0000ff" : "#00ff00";
@@ -113,7 +113,8 @@
         return send(T.OK);
       }
       case T.CAPTURE: {
-        const data = await jpeg();
+        // Like the firmware: photos at the sensor's largest size, whatever the stream is set to.
+        const data = await jpeg(camera.sensor === "OV2640" ? [1600, 1200] : [2048, 1536]);
         const name = photoName();
         camera.files.set(name, data);
         return sendText(T.CAPTURED, JSON.stringify({ name, size: data.length }));
@@ -170,6 +171,7 @@
     value: {
       async requestPort({ filters = [] } = {}) {
         if (!filters.some((f) => f.usbVendorId === 0x303a)) throw new DOMException("No port selected by the user.", "NotFoundError");
+        await new Promise((resolve) => setTimeout(resolve, camera.connectDelayMs));
         return port;
       },
       async getPorts() {

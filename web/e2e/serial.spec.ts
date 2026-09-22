@@ -121,7 +121,8 @@ test("captures to the device, lists and opens the photo", async ({ page }) => {
   await page.getByRole("button", { name: name! }).click();
   const img = page.getByRole("dialog").getByRole("img");
   await expect(img).toHaveJSProperty("complete", true);
-  expect(await img.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBe(1920);
+  // Photos use the sensor's largest size (OV3660: 2048x1536), not the stream size.
+  expect(await img.evaluate((el: HTMLImageElement) => [el.naturalWidth, el.naturalHeight])).toEqual([2048, 1536]);
 });
 
 test("unplugging shows an error and returns to disconnected", async ({ page }) => {

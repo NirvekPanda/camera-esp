@@ -152,7 +152,11 @@ def main():
         data = cam.request(GET_FILE, photo["name"].encode(), expect=FILE_DATA, timeout=30)
         if len(data) != photo["size"] or not data.startswith(b"\xff\xd8"):
             raise AssertionError("downloaded photo doesn't match")
-        return f"{photo['name']} ({photo['size'] // 1024} KB), {len(names)} on card"
+        # Photos use the sensor's largest size whatever the stream is set to (240x240 here).
+        size = jpeg_size(data)
+        if size not in ((2048, 1536), (1600, 1200)):
+            raise AssertionError(f"photo is {size[0]}x{size[1]}, not the sensor's full resolution")
+        return f"{photo['name']} {size[0]}x{size[1]} ({photo['size'] // 1024} KB), {len(names)} on card"
     check("capture → list → download", photos)
     check("stream off", lambda: cam.request(STREAM, b"\x00") and None)
 

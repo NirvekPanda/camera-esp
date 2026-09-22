@@ -96,7 +96,10 @@ The Wii's pointer and big TV don't fit here. What changes:
   show the position.
 - **Center** (or A) opens the focused page. On every page, **Back** is the bottom-left button (B
   also goes back). The Pictures grid (which keeps its Back button) opens a photo with Center/A in a **full-screen
-  viewer**: just the photo and the nav bar with its file name. Left/Right step through the photos,
+  viewer**: just the photo and the nav bar, which shows **when the photo was taken**, its time
+  and then its date (`10:30 - June, 21, 2026`). If the full month wouldn't fit before the status
+  icons, it's shortened (`Sep, 3, 2026`). The device records the time and date of every photo; the
+  emulator sets the date from the browser. Left/Right step through the photos,
   and B returns to the gallery.
   Settings change with Center, which toggles or cycles the value, because arrows never change
   values. The settings are Resolution, Mirror, Flip vertical, **Grid** (rule-of-thirds overlay on
@@ -201,7 +204,7 @@ the primary action always bottom-right. `┏━┓` marks the focused element.
 **Viewer** (full screen like the camera; Left/Right step through photos, B back to the gallery):
 ```
 ┌────────────────────────────────────────┐
-│ 14:23  IMG_0002.jpg                ⭘USB│
+│ 10:30  - June, 21, 2026            ⭘USB│
 ├────────────────────────────────────────┤
 │                                        │
 │                photo                   │
