@@ -307,7 +307,6 @@ void Ui::rememberPhoto() {
 }
 
 void Ui::libraryChanged() {
-  confirmDelete_ = false;  // Confirm was for the photo as it was: never carry it to another
   const int photos = photoCount();
   for (int i = 0; i < photos && focusedPhoto_[0]; i++) {
     const char* name = library_->name(i);
@@ -319,7 +318,8 @@ void Ui::libraryChanged() {
       return;
     }
   }
-  if (screen_ == Screen::Viewer && photos == 0) screen_ = Screen::Pictures;  // the photo is gone
+  confirmDelete_ = false;  // Confirm was for the photo that's gone: never carry it to another
+  if (screen_ == Screen::Viewer && photos == 0) screen_ = Screen::Pictures;
   clampPhotoFocus();
 }
 

@@ -953,6 +953,8 @@ TEST(an_armed_confirm_never_carries_over_to_another_photo) {
   ui.press(Button::Right);
   ui.press(Button::Center);  // armed on photo 0
   CHECK(ui.confirmingDelete());
+  ui.libraryChanged();  // same photos (the host refreshed the list): still armed
+  CHECK(ui.confirmingDelete());
   snprintf(photos.names[0], PHOTO_NAME_MAX, "%s", photos.names[1]);  // photo 0 removed elsewhere
   snprintf(photos.names[1], PHOTO_NAME_MAX, "%s", photos.names[2]);
   photos.n = 2;
