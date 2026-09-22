@@ -1,15 +1,26 @@
 "use client";
 
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { SOURCE_OPTIONS, useCamera, type SourceId } from "@/context/camera-context";
 
 export function ConnectBar() {
   const { status, error, connect, disconnect } = useCamera();
   const [choice, setChoice] = useState<SourceId>("usb");
+  const onDevice = usePathname().startsWith("/device");
 
   return (
     <header className="bar">
       <h1>ESP Camera</h1>
+      <nav className="tabs" aria-label="Pages">
+        <Link href="/" aria-current={onDevice ? undefined : "page"}>
+          Camera
+        </Link>
+        <Link href="/device/" aria-current={onDevice ? "page" : undefined}>
+          Device
+        </Link>
+      </nav>
       <div className="bar-controls">
         <select
           aria-label="Camera source"

@@ -8,7 +8,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("taking a picture adds a YYYYMMDD-HHMMSS.jpg file", async ({ page }) => {
-  await expect(page.getByText("No photos yet")).toBeVisible();
+  await expect(page.getByText("No photos", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Take picture" }).click();
   await expect(page.getByRole("heading", { name: "Photos (1)" })).toBeVisible();
   await expect(page.locator(".files li .file-name")).toHaveText(/^\d{8}-\d{6}(_\d+)?\.jpg$/);

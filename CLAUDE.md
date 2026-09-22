@@ -32,6 +32,15 @@ Before **every** commit to this repo:
 3. If the docs and the code disagree, fix one of them before committing. Never commit code the
    docs contradict.
 
+## User-facing text (site and device UI)
+
+- **No instructions, explanations or commentary anywhere a user can see them.** That includes
+  demo, emulator and test tabs, empty states, aria labels and error messages. Nothing like "This
+  is the device's own UI code…", "Focus it and use the arrow keys", "Take one!" or "(run make
+  flash)".
+- UI text is limited to **labels, values and state** ("No photos", "Camera firmware is out of
+  date"). Explanations belong in `docs/`, and developer hints in code comments.
+
 ## Coding standards
 
 - **Minimal code.** Write the smallest change that does the job. Add no speculative abstractions,
@@ -86,6 +95,29 @@ Before **every** commit to this repo:
 - Every build exports `web/public/firmware/` (merged image + manifest). Commit the firmware source
   first, then `make build`, then commit the exported files, so the manifest version is a real
   commit and not `-dirty`.
+
+## Device UI (`firmware/lib/ui/`)
+
+- **Clean, consistent UI is the first priority**, ahead of features. Follow the design principles
+  in `docs/wii-theme.md` §0:
+  - Every screen has the same nav bar and bottom bar: Back bottom-left, primary action
+    bottom-right, same size and place on every page.
+  - Arrows only move focus, and Center only activates. No hidden shortcuts.
+  - One focus outline style.
+  - Labels and state only.
+  New screens use the shared bars. `make uitest` enforces the rules.
+- Portable C++17: no Arduino, no heap, no RTTI or exceptions. The same code runs on the ESP32 and
+  as WASM on the site's Device tab. Design: `docs/wii-theme.md`.
+- **Deterministic:** integer or fixed-point math only (no floats or `sin` in rendering), and
+  `-ffp-contract=off` for both builds. The native tests and the browser test check the same golden
+  hash (`firmware/test_ui/golden.h`).
+- Test first with `make uitest`. If pixels change on purpose, look at `make ui-preview`, then update
+  `EXPECTED_HASH`.
+- After changing UI code, run `make wasm` and commit `web/public/wasm/device-ui.wasm`. `npm test`
+  fails if the `.wasm` doesn't match `golden.h`.
+- Only draw what the ST7789 emulator decodes: the site must show the SPI output, never the
+  framebuffer directly.
+- Wii-*inspired* only: no Nintendo assets, fonts, sounds or names.
 
 ## Git
 

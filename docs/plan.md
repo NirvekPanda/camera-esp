@@ -7,7 +7,8 @@
 | **Camera device** | Xiao ESP32-S3 + Sense camera (OV2640/OV3660), microSD, SPI 240×240 display, 5-way switch, MPU-6050, battery | hardware |
 | **Firmware** | Arduino/ESP-IDF sketch: captures frames, streams them over USB, saves JPEGs to SD, serves file list/downloads, later drives the SPI display and buttons | `firmware/` (PlatformIO, Arduino) |
 | **Transport** | How the site talks to the device. **Phase 1: USB serial (WebSerial).** Phase 2: WiFi (feature, added later) | `web/src/lib/camera/` + firmware |
-| **Website** | Static Next.js app: live preview, take-picture button, file browser + image modal, firmware image for WebSerial flashing | `web/` |
+| **Device UI** | Wii-inspired UI for the camera's own 240×240 display (Camera / Pictures / Settings), portable C++ with an ST7789 driver. Also compiled to WASM for the site's Device tab. Design and research: [`docs/wii-theme.md`](wii-theme.md) | `firmware/lib/ui/` |
+| **Website** | Static Next.js app. **Camera** tab: live preview, take-picture button, file browser + image modal. **Device** tab: the device UI emulated on a virtual ST7789. Also serves the firmware image for WebSerial flashing | `web/` |
 | **Deployment** | Static export → nginx on Proxmox host (**port 8888**) → Cloudflare Tunnel → `camera.nirvek.xyz` | `start.sh`, `deploy/nginx.conf`, `Makefile`, `cloudflare-domain-setup.md` |
 | **Pipeline** | Feature branches, unit + integration tests, pre-push hook, CI, code review before PR | `CLAUDE.md`, `.githooks/`, `.github/workflows/` |
 
@@ -42,7 +43,10 @@
 | `make web` = `./start.sh` | git pull, stop other copies on 8888, build, publish to nginx, health check |
 | `make stop` = `./start.sh stop` | remove the site from nginx, free port 8888 |
 | `make restart` = `./start.sh restart` | stop + start, without pulling |
-| `make check` | web lint, types, unit and integration tests |
+| `make uitest` | device UI native tests: framebuffer, ST7789 driver/emulator, screens, golden frames |
+| `make ui-preview` | print the real device UI frames in the terminal (`OUT=dir` also writes PPMs) |
+| `make wasm` | build `web/public/wasm/device-ui.wasm` for the Device tab (needs `emcc`) |
+| `make check` | `uitest`, then web lint, types, unit and integration tests |
 
 `start.sh` works on both the Debian host (`/etc/nginx/sites-available`, `/var/www/camera`, sudo)
 and macOS Homebrew nginx (`servers/camera.conf`, no sudo). It tests the nginx config before every
@@ -84,6 +88,9 @@ vendors (`0x303A`, `0x2886`).
   photo names are in local time without timezone support on the device. Photos taken before a sync
   fall back to `IMG_0001.jpg` counters.
 - **Photos on the device** are stored in `/photos/` on the SD card.
+- **Reproducible firmware:** `-ffile-prefix-map=$PROJECT_DIR=.` keeps absolute paths out of the
+  ELF, whose hash is stamped into the image. So the same sources give a byte-identical image in
+  any checkout (verified with two different checkout paths).
 - **Mirror & vertical flip:** both buttons are camera settings (`setMirror` → `set_hmirror`,
   `setVflip` → `set_vflip`), not CSS transforms, so saved photos match the preview. The site
   re-applies them after every reconnect. OV3660 modules are mounted upside down, so the firmware
@@ -145,8 +152,8 @@ Binary packets, so JPEGs need no base64:
   arrive between replies. So `SerialSource` matches each reply to the oldest pending command.
 - **A missing reply means a broken link.** If a command times out (5 s, 30 s for `GET_FILE`) or a
   write fails, later replies can no longer be matched safely. So the site disconnects with an
-  error ("Camera stopped responding…", or "…Is the camera firmware flashed?" if the very first
-  command gets no answer).
+  error: "Camera stopped responding", or "No camera firmware detected" if the very first command
+  gets no answer.
 - The firmware stops streaming when a USB write comes back short (the host stopped reading). Every
   connect sends `STREAM 1` again.
 - Both parsers (`protocol.ts`, `firmware/src/protocol.h`) scan for `A5 5A` and resync after noise or
@@ -187,26 +194,30 @@ web/
 ├── playwright.config.ts        # integration tests: e2e/ against the static build on port 3100
 ├── package.json                # dev (8888), build, test, test:e2e, typecheck, check; engines
 ├── public/firmware/            # camera-esp.bin + manifest.json, exported by `make build` (committed)
+├── public/wasm/                # device-ui.wasm (19.8 KB, no imports), built by `make wasm` (committed)
 ├── .nvmrc / .npmrc             # Node 24.21.0, engine-strict
 ├── e2e/
 │   ├── live-view.spec.ts       # preview renders frames, fps, disconnect, flip
 │   ├── photos.spec.ts          # capture, file list, modal navigation, persistence, mirrored photos
 │   ├── stream-settings.spec.ts # resolution/fps options, resize, photo size, pre-connect settings
 │   ├── viewer.spec.ts          # resizable viewer: drag, clamps, keyboard, button placement, vflip
+│   ├── device.spec.ts          # Device tab: WASM golden in the browser, keys/pad, USB icon, tabs
 │   ├── serial.spec.ts          # USB camera end to end against the fake device (below)
 │   ├── fake-serial-device.js   # fake ESP32 on navigator.serial speaking the firmware protocol
 │   └── firmware.spec.ts        # site serves /firmware/manifest.json + a valid flash image
 └── src/
     ├── app/
-    │   ├── layout.tsx          # html shell, fonts, metadata
+    │   ├── layout.tsx          # html shell, CameraProvider + ConnectBar (shared by both tabs)
+    │   ├── device/page.tsx     # Device tab
     │   ├── globals.css         # design tokens (light/dark), all styles
-    │   └── page.tsx            # CameraProvider + page layout
+    │   └── page.tsx            # Camera tab: LiveView + FileList
     ├── components/
-    │   ├── ConnectBar.tsx      # source picker, connect/disconnect, status dot, errors
+    │   ├── ConnectBar.tsx      # Camera/Device tabs, source picker, connect/disconnect, status, errors
     │   ├── LiveView.tsx        # canvas preview, shutter + flips, resolution/fps dropdowns, size
     │   ├── ResizeHandle.tsx    # ↘ corner handle: pointer drag + keyboard slider
     │   ├── FileList.tsx        # saved photos, refresh, click to open
-    │   └── ImageModal.tsx      # <dialog> viewer, ← → navigation, download, Esc/backdrop close
+    │   ├── ImageModal.tsx      # <dialog> viewer, ← → navigation, download, Esc/backdrop close
+    │   └── DeviceScreen.tsx    # Device tab: WASM device UI → canvas (2×), 5-way pad + keys, USB icon
     ├── context/
     │   └── camera-context.tsx  # SOURCE_OPTIONS, source, status, files, mirror/vflip/resolution/fps
     └── lib/
@@ -218,6 +229,8 @@ web/
         │   ├── protocol.test.ts
         │   ├── serial-source.ts# USB camera over WebSerial: USB_FILTERS, request/reply queue, frames
         │   └── mock-source.ts  # webcam or test pattern frames, in-memory "SD card"
+        ├── device-ui.ts        # WASM wrapper (createDeviceUi), rgb565ToRgba, KEY_TO_BUTTON
+        ├── device-ui.test.ts   # runs the committed .wasm: golden == native, == golden.h
         ├── viewer-size.ts      # MIN/MAX/DEFAULT viewer width, clampViewerWidth, dragWidth
         ├── viewer-size.test.ts
         ├── filename.ts         # YYYYMMDD-HHMMSS formatting/parsing
@@ -236,8 +249,19 @@ firmware/
 │   ├── main.cpp                # camera init, command handling, streaming loop, SD photos
 │   ├── protocol.h              # packet types, send helpers, command Parser (mirrors protocol.ts)
 │   └── camera_pins.h           # XIAO ESP32-S3 Sense camera + SD pins
+├── lib/ui/src/                 # device UI (portable C++17, no Arduino, no heap)
+│   ├── framebuffer.*           # 240×240 RGB565, rounded rects, circles, 4-bit AA text, palette
+│   ├── st7789.*                # SpiBus interface, init sequence, flush (CASET/RASET/RAMWR, BE RGB565)
+│   ├── st7789_emulator.*       # decodes that SPI stream into panel memory, as the glass shows it
+│   ├── ui.*                    # screens, 5-way input, eased animations (fixed-point, deterministic)
+│   ├── font.h, fonts.cpp       # M PLUS Rounded 1c 12/16 px, generated; OFL.txt beside it
+├── test_ui/                    # `make uitest`: native tests + golden session (shared with WASM)
+├── wasm/device_ui.cpp          # C API exported to the site
 ├── scripts/export_web.py       # post-build: merged image + manifest → web/public/firmware/
-└── tools/hwtest.py             # `make hwtest`: protocol-level hardware test (pyserial)
+└── tools/
+    ├── hwtest.py               # `make hwtest`: protocol-level hardware test (pyserial)
+    ├── ui_preview.cpp          # `make ui-preview`: frames in the terminal
+    └── make_font.py            # regenerate fonts.cpp (dev-time, needs Pillow)
 ```
 
 ### Firmware
@@ -248,8 +272,9 @@ firmware/
   JPEG buffer is about 384 KB, and measured FHD frames are about 61 KB. Allocating for FHD instead
   could fail init on an OV2640.
 - **Out-of-date firmware** answers new commands with `ERROR "Unknown command 0x.."`. The site
-  turns that into "Camera firmware is out of date… Reflash it: make flash". OV3660 modules get `vflip` because they're mounted upside down relative
-  to the OV2640.
+  shows "Camera firmware is out of date". Per `CLAUDE.md`, errors state the problem and never
+  give instructions. OV3660 modules get `vflip` because they're mounted upside down relative to
+  the OV2640.
 - **Loop:** handle any received commands, then send a `FRAME` whenever streaming and the fps
   interval has passed. Streaming starts only when the site sends `STREAM 1`, so an idle port gets no
   binary data.
@@ -317,7 +342,8 @@ The full rules live in `CLAUDE.md`. In short:
    `web/e2e/`). USB behavior is tested against `fake-serial-device.js`. Keep it in step with the
    firmware whenever the protocol changes. Firmware changes are also checked on the real board with
    `make flash && make hwtest`.
-3. `npm run check` = lint → typecheck → unit → build → integration. It runs locally in the
+3. `make check` = `make uitest` (device UI, native C++) then `npm run check` (lint → typecheck →
+   unit → build → integration). Both run locally in the
    **pre-push hook** (`.githooks/pre-push`, which also blocks pushes to `main`) and in **CI**
    (`.github/workflows/web.yml`) on every PR.
 4. Review `docs/` and update them in the same commit.
@@ -344,13 +370,16 @@ The full rules live in `CLAUDE.md`. In short:
 14. [ ] Flash firmware from the site over WebSerial (esptool-js, using `/firmware/manifest.json`)
 15. [x] Crop 480×480 / 720×720 photos on the device (untested on hardware: needs an SD card)
 16. [x] Resizable viewer (↘ handle, 360–1280px), vertical flip (`VFLIP`), 1920×1080 default with fallback
+17. [x] Wii-inspired device UI (`docs/wii-theme.md`): research, CLI mockups, portable C++ UI + ST7789
+    driver/emulator, `make uitest`/`ui-preview`/`wasm`, site **Device** tab
 
 **Phase 2: device + deploy**
-17. [ ] SPI display shows live view; 5-way switch takes pictures
-18. [ ] On-device file preview menu (240×240)
-19. [ ] Deploy to `camera.nirvek.xyz`: run `./start.sh` on the Proxmox host, add the tunnel
+18. [ ] Wire the ST7789 + 5-way switch and run `ui::Ui` on the device (a `SpiBus` over Arduino `SPI`
+    + DC pin); Camera page shows the live sensor preview and the shutter takes real photos
+19. [ ] Pictures page shows real SD photos (thumbnails, full view); battery level (`Link::Battery`)
+20. [ ] Deploy to `camera.nirvek.xyz`: run `./start.sh` on the Proxmox host, add the tunnel
     hostname → `http://<host>:8888` (fix the garbled `cloudflare-domain-setup.md` first)
-20. [ ] Date range filter, camera animations (README step 3)
+21. [ ] Date range filter, camera animations (README step 3)
 
 **Phase 3: features**
 - [ ] WiFi transport (`WifiSource`)

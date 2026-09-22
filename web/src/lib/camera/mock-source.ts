@@ -33,7 +33,7 @@ export class MockSource implements CameraSource {
 
   async connect() {
     if (this.input === "webcam") {
-      if (!navigator.mediaDevices) throw new Error("Webcam access needs HTTPS or localhost");
+      if (!navigator.mediaDevices) throw new Error("Webcam requires HTTPS");
       // Ask for the most the webcam has; frames are cropped and scaled to the chosen resolution.
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: { ideal: 1920 }, height: { ideal: 1080 } },

@@ -10,5 +10,7 @@ while read -r _ _ remote_ref _; do
   fi
 done
 
-cd "$(git rev-parse --show-toplevel)/web"
+cd "$(git rev-parse --show-toplevel)"
+make uitest
+cd web
 npm run check

@@ -25,7 +25,7 @@ export function FileList() {
         </button>
       </div>
       {files.length === 0 ? (
-        <p className="empty">{live ? "No photos yet. Take one!" : "Connect a camera to see its photos."}</p>
+        <p className="empty">{live ? "No photos" : "No camera connected"}</p>
       ) : (
         <ul>
           {files.map((file) => (
