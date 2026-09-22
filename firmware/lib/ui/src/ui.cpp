@@ -167,7 +167,10 @@ void Ui::pressCamera(Button b) {
   if (b == Button::B) back();  // Back, as on every other screen
 }
 
-void Ui::back() { screen_ = screen_ == Screen::Viewer ? Screen::Pictures : Screen::Home; }
+void Ui::back() {
+  if (screen_ == Screen::Camera) preview_ = nullptr;  // never reopen on a stale frame
+  screen_ = screen_ == Screen::Viewer ? Screen::Pictures : Screen::Home;
+}
 
 void Ui::pressHome(Button b) {
   if ((b == Button::Left && homeFocus_ > 0) || (b == Button::Right && homeFocus_ < PAGE_COUNT - 1)) {
@@ -349,9 +352,11 @@ void Ui::renderHome(Framebuffer& fb) const {
 
 void Ui::renderCamera(Framebuffer& fb) const {
   const Rect view = {0, PREVIEW_Y, PREVIEW_W, PREVIEW_H};  // full-screen picture
-  if (preview_) {  // live frame from the camera
-    for (int y = 0; y < view.h; y++)
-      for (int x = 0; x < view.w; x++) fb.pixels[(view.y + y) * WIDTH + x] = preview_[y * view.w + x];
+  if (preview_) {  // live frame from the camera, with the Mirror / Flip vertical settings applied
+    for (int y = 0; y < view.h; y++) {
+      const uint16_t* row = preview_ + (vflipped_ ? view.h - 1 - y : y) * view.w;
+      for (int x = 0; x < view.w; x++) fb.pixels[(view.y + y) * WIDTH + x] = row[mirrored_ ? view.w - 1 - x : x];
+    }
   } else {  // no camera: color bars, flipped like the real picture would be
     const int bars = sizeof BARS / sizeof BARS[0], split = view.h * 7 / 10;
     for (int i = 0; i < bars; i++) {

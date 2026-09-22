@@ -106,7 +106,12 @@ The Wii's pointer and big TV don't fit here. What changes:
   preview (`Ui::setPreview`, a 240×212 RGB565 frame) when a camera feeds one. In the emulator,
   that's any connected camera source: the plugged-in board over USB, or a mock. The frames are
   center-cropped and converted to RGB565, but only while the Camera screen is showing. With no
-  camera, it shows color bars. The nav bar shows
+  camera, it shows color bars.
+  - The UI applies Mirror and Flip vertical to what it displays, preview included.
+  - Leaving the Camera app drops the preview, so it never reopens on a stale frame.
+  - When the device is wired (plan item 19), decide once: either the firmware passes sensor frames
+    unflipped, or it maps these settings to the sensor and the UI stops flipping. Photos must match
+    the preview either way. The nav bar shows
   a small camera icon instead of a text title. Center takes a picture (a white blink), A toggles
   the flash, and B goes back to Home.
 - **Emulator controls:** the d-pad sits in an NES-style housing (a dark well in a gray panel), and
