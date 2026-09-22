@@ -202,6 +202,7 @@ web/
 │   ├── stream-settings.spec.ts # resolution/fps options, resize, photo size, pre-connect settings
 │   ├── viewer.spec.ts          # resizable viewer: drag, clamps, keyboard, button placement, vflip
 │   ├── device.spec.ts          # Device tab: WASM golden in the browser, keys/pad, USB icon, tabs
+│   ├── firmware-update.spec.ts # Update firmware: releases the camera, reports failures, recovers
 │   ├── serial.spec.ts          # USB camera end to end against the fake device (below)
 │   ├── fake-serial-device.js   # fake ESP32 on navigator.serial speaking the firmware protocol
 │   └── firmware.spec.ts        # site serves /firmware/manifest.json + a valid flash image
@@ -217,7 +218,8 @@ web/
     │   ├── ResizeHandle.tsx    # ↘ corner handle: pointer drag + keyboard slider
     │   ├── FileList.tsx        # saved photos, refresh, click to open
     │   ├── ImageModal.tsx      # <dialog> viewer, ← → navigation, download, Esc/backdrop close
-    │   └── DeviceScreen.tsx    # Device tab: WASM device UI → canvas (2×), d-pad + A/B below, flash ring, USB icon
+    │   ├── DeviceScreen.tsx    # Device tab: WASM device UI → canvas (2×), d-pad + A/B below, flash ring, USB icon
+    │   └── FirmwareButton.tsx  # header: Update firmware (esptool-js), progress, result
     ├── context/
     │   └── camera-context.tsx  # SOURCE_OPTIONS, source, status, files, mirror/vflip/resolution/fps
     └── lib/
@@ -229,6 +231,8 @@ web/
         │   ├── protocol.test.ts
         │   ├── serial-source.ts# USB camera over WebSerial: USB_FILTERS, request/reply queue, frames
         │   └── mock-source.ts  # webcam or test pattern frames, in-memory "SD card"
+        ├── firmware.ts         # parseManifest, checkImage, updateFirmware (injectable flasher), esptoolFlasher
+        ├── firmware.test.ts
         ├── device-ui.ts        # WASM wrapper (createDeviceUi), rgb565ToRgba, KEY_TO_BUTTON
         ├── device-ui.test.ts   # runs the committed .wasm: golden == native, == golden.h
         ├── viewer-size.ts      # MIN/MAX/DEFAULT viewer width, clampViewerWidth, dragWidth
@@ -281,7 +285,12 @@ firmware/
 - **SD card:** SPI, CS = GPIO21 (shared with the user LED, so the LED is unused). With no card,
   `CAPTURE` / `LIST` / `GET_FILE` reply `ERROR "No SD card"`, and streaming still works. A failed
   write deletes the partial file.
-- **Flashing:** `make flash` (or `make upload`) from the CLI. Every build also exports
+- **Flashing:** **Update firmware** on the site (header, every tab) or `make flash` / `make upload`
+  from the CLI. The site button fetches `/firmware/manifest.json`, checks it (chip ESP32-S3, image
+  starts with the ESP magic `0xE9`) *before* touching the board, releases the camera's serial port,
+  asks for the port and flashes with **esptool-js** (Espressif's browser flasher, Apache-2.0, loaded
+  only on click). It writes the merged image at its offset, then hard-resets into the new
+  firmware. Progress shows in the button ("Updating 42%"), and the outcome next to it. Every build also exports
   `web/public/firmware/camera-esp.bin`. That's a merged image (bootloader, partitions, boot_app0,
   app) to write at `0x0`, the same parts and offsets `pio run -t upload` uses. `manifest.json` next
   to it records `version`: the last commit touching the image's sources (`firmware/src/`,
@@ -367,7 +376,7 @@ The full rules live in `CLAUDE.md`. In short:
 11. [x] `protocol.ts` + `SerialSource`, live view from the real camera (stream verified with `make hwtest`)
 12. [x] Firmware: `CAPTURE` to SD, `LIST`, `GET_FILE`, `SET_TIME` (SD path untested on hardware: no card inserted yet)
 13. [x] `make flash` / `make upload`, `make hwtest`, firmware image + manifest exported to the site
-14. [ ] Flash firmware from the site over WebSerial (esptool-js, using `/firmware/manifest.json`)
+14. [x] Flash firmware from the site over WebSerial (esptool-js, using `/firmware/manifest.json`); real-board flash pending
 15. [x] Crop 480×480 / 720×720 photos on the device (untested on hardware: needs an SD card)
 16. [x] Resizable viewer (↘ handle, 360–1280px), vertical flip (`VFLIP`), 1920×1080 default with fallback
 17. [x] Wii-inspired device UI (`docs/wii-theme.md`): research, CLI mockups, portable C++ UI + ST7789

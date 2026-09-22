@@ -480,3 +480,10 @@ main {
 .dpad-center { grid-area: 2 / 2; border-radius: 50%; }
 .dpad-right { grid-area: 2 / 3; }
 .dpad-down { grid-area: 3 / 2; }
+
+.firmware-result {
+  flex-basis: 100%;
+  text-align: right;
+  font-size: 0.85rem;
+  color: var(--muted);
+}

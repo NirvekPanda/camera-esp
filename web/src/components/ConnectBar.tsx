@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { SOURCE_OPTIONS, useCamera, type SourceId } from "@/context/camera-context";
+import { FirmwareButton } from "./FirmwareButton";
 
 export function ConnectBar() {
   const { status, error, connect, disconnect } = useCamera();
@@ -43,6 +44,7 @@ export function ConnectBar() {
         <span className="status" data-status={status} role="status">
           {status}
         </span>
+        <FirmwareButton />
       </div>
       {error && (
         <p className="error" role="alert">
