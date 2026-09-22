@@ -10,10 +10,10 @@ import {
   PREVIEW_W,
   PREVIEW_Y,
   Screen,
+  THUMB_SIZE,
   createDeviceUi,
-  rgb565ToRgba,
-  rgbaToRgb565,
 } from "./device-ui";
+import { rgb565ToRgba, rgbaToRgb565 } from "./rgb565";
 
 // The committed build (`make wasm`): a stale or broken build fails here, not just in the browser.
 const wasm = readFileSync(path.join(__dirname, "../../public/wasm/device-ui.wasm"));
@@ -132,25 +132,33 @@ describe("createDeviceUi (real WASM build)", () => {
     expect(panel[(PREVIEW_Y + 30) * PANEL_SIZE + 5]).toBe(0xffff); // first color bar is white
   });
 
-  it("the photo viewer's nav bar shows the date the photo was taken", async () => {
-    const takeAndView = async (month: number) => {
-      const ui = await createDeviceUi(wasm);
-      ui.setDate(2026, month, 21);
-      ui.press(Button.Center);
-      ui.frame(300); // Camera
-      ui.press(Button.Center); // shoot
-      ui.press(Button.B);
-      ui.press(Button.Right);
-      ui.press(Button.Center);
-      ui.frame(300); // Pictures
-      ui.press(Button.Right);
-      ui.press(Button.Right);
-      ui.press(Button.Down); // the newest (6th) photo: row 2, column 3
-      ui.press(Button.Center);
-      expect(ui.screen()).toBe(Screen.Viewer);
-      return ui.frame(16).slice(0, 27 * PANEL_SIZE);
-    };
-    expect(await takeAndView(6)).not.toEqual(await takeAndView(12)); // "June, 21, 2026" vs "December, 21, 2026"
+  it("the Pictures page and viewer show the photos the page loads", async () => {
+    const ui = await createDeviceUi(wasm);
+    ui.setPhotos(["20260621-094107.jpg", "20260620-120000.jpg"]);
+    ui.setThumbnail(0, new Uint16Array(THUMB_SIZE * THUMB_SIZE).fill(0x07e0)); // green
+    ui.press(Button.Right);
+    ui.press(Button.Center);
+    let panel = ui.frame(300); // Pictures
+    expect(ui.screen()).toBe(Screen.Pictures);
+    expect(panel[(38 + 32) * PANEL_SIZE + 12 + 32]).toBe(0x07e0); // thumbnail 0
+    expect(panel[(38 + 32) * PANEL_SIZE + 12 + 74 + 32]).toBe(0xffff); // thumbnail 1 not loaded yet: tile
+    ui.press(Button.Center); // view photo 0
+    ui.frame(16);
+    expect(ui.wantedImage()).toBe(0); // the viewer asks for it
+    ui.setImage(0, new Uint16Array(PREVIEW_W * PREVIEW_H).fill(0xf800)); // red
+    panel = ui.frame(16);
+    expect(ui.wantedImage()).toBe(-1);
+    expect(panel[(PREVIEW_Y + 100) * PANEL_SIZE + 120]).toBe(0xf800);
+  });
+
+  it("shutter presses are handed to the page to save photos", async () => {
+    const ui = await createDeviceUi(wasm);
+    ui.press(Button.Center);
+    ui.frame(300); // Camera
+    ui.press(Button.Center);
+    ui.press(Button.Center);
+    expect(ui.takeCaptureRequests()).toBe(2);
+    expect(ui.takeCaptureRequests()).toBe(0);
   });
 
   it("shows the USB icon only when linked", async () => {

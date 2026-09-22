@@ -5,10 +5,12 @@
 #include <vector>
 
 #include "../lib/ui/src/framebuffer.h"
+#include "../lib/ui/src/photos.h"
 #include "../lib/ui/src/st7789.h"
 #include "../lib/ui/src/st7789_emulator.h"
 #include "../lib/ui/src/ui.h"
 #include "../src/jpeg.h"
+#include "fake_library.h"
 #include "golden.h"
 
 using namespace ui;
@@ -333,8 +335,11 @@ TEST(huge_tick_saturates_instead_of_restarting_animations) {
   CHECK(!ui.animating());
 }
 
-// Opens home tile `page` (0 Camera, 1 Pictures, 2 Settings) from a fresh UI.
+static FakeLibrary demoPhotos(5);
+
+// Opens home tile `page` (0 Camera, 1 Pictures, 2 Settings) from a fresh UI with 5 photos.
 static void openPage(Ui& ui, int page) {
+  ui.setLibrary(&demoPhotos);
   for (int i = 0; i < page; i++) ui.press(Button::Right);
   ui.press(Button::Center);
   ui.tick(OPEN_MS);
@@ -359,9 +364,9 @@ TEST(center_opens_page_after_zoom) {
 TEST(camera_center_shoots_a_toggles_flash_b_goes_back) {
   Ui ui;
   openPage(ui, 0);
-  int before = ui.photoCount();
-  ui.press(Button::Center);  // the shutter
-  CHECK_EQ(ui.photoCount(), before + 1);
+  ui.press(Button::Center);  // the shutter: the host saves the photo
+  CHECK_EQ(ui.takeCaptureRequests(), 1);
+  CHECK_EQ(ui.takeCaptureRequests(), 0);
   CHECK(ui.animating());  // shutter blink
   ui.tick(FLASH_MS);
   CHECK(!ui.flashOn());
@@ -442,6 +447,44 @@ TEST(jpeg_size_reads_the_sof_header) {
   CHECK(!jpegSize(jpeg, 8, w, h));  // truncated before the SOF
 }
 
+TEST(parse_photo_time) {
+  int y, mo, d, min;
+  CHECK(parsePhotoTime("20260621-094107.jpg", y, mo, d, min));
+  CHECK_EQ(y, 2026);
+  CHECK_EQ(mo, 6);
+  CHECK_EQ(d, 21);
+  CHECK_EQ(min, 9 * 60 + 41);
+  CHECK(parsePhotoTime("20260621-094107_02.jpg", y, mo, d, min));  // same-second duplicate
+  CHECK(!parsePhotoTime("IMG_0001.jpg", y, mo, d, min));
+  CHECK(!parsePhotoTime("20261321-094107.jpg", y, mo, d, min));  // month 13
+  CHECK(!parsePhotoTime("2026", y, mo, d, min));
+}
+
+TEST(sort_newest_first) {
+  char names[4][PHOTO_NAME_MAX] = {"20260101-000000.jpg", "20260921-142305.jpg", "20260921-142305_02.jpg",
+                                   "20250615-120000.jpg"};
+  sortNewestFirst(names, 4);
+  CHECK(strcmp(names[0], "20260921-142305_02.jpg") == 0);
+  CHECK(strcmp(names[1], "20260921-142305.jpg") == 0);
+  CHECK(strcmp(names[2], "20260101-000000.jpg") == 0);
+  CHECK(strcmp(names[3], "20250615-120000.jpg") == 0);
+}
+
+TEST(scale_cover_crops_and_scales) {
+  // 8x4 source: left half 0x1111, right half 0x2222. Cover-scaled to 2x2 keeps the middle 4x4.
+  uint16_t src[8 * 4], dst[2 * 2];
+  for (int y = 0; y < 4; y++)
+    for (int x = 0; x < 8; x++) src[y * 8 + x] = x < 4 ? 0x1111 : 0x2222;
+  scaleCover(src, 8, 4, dst, 2, 2);
+  CHECK_EQ(dst[0], 0x1111);
+  CHECK_EQ(dst[1], 0x2222);
+  CHECK_EQ(dst[2], 0x1111);
+  CHECK_EQ(dst[3], 0x2222);
+  uint16_t same[8 * 4];
+  scaleCover(src, 8, 4, same, 8, 4);  // same size: identical
+  CHECK(memcmp(same, src, sizeof src) == 0);
+}
+
 TEST(photo_date_format) {
   char out[32];
   photoDate(out, 2026, 6, 21, 1000);
@@ -455,31 +498,24 @@ TEST(photo_date_format) {
 }
 
 TEST(viewer_nav_shows_when_the_photo_was_taken) {
+  FakeLibrary photos(2);
+  snprintf(photos.names[0], PHOTO_NAME_MAX, "20260621-094107.jpg");
+  snprintf(photos.names[1], PHOTO_NAME_MAX, "IMG_0001.jpg");
   Ui ui, clockAt941;
-  ui.setDate(2026, 6, 21);
-  ui.setTime(9 * 60 + 41);
-  openPage(ui, 0);
-  ui.press(Button::Center);  // photo taken at 09:41 on June 21
-  ui.tick(FLASH_MS);
-  ui.setTime(13 * 60);  // later
-  ui.press(Button::B);
-  ui.press(Button::Right);
-  ui.press(Button::Center);
-  ui.tick(OPEN_MS);
-  for (int i = 0; i < ui.photoCount(); i++) ui.press(Button::Right), ui.press(Button::Down);
-  ui.press(Button::Up);  // from Back to the newest photo
-  ui.press(Button::Center);
-  CHECK(ui.screen() == Screen::Viewer);
-  CHECK_EQ(ui.focus(), ui.photoCount() - 1);
+  ui.setTime(13 * 60);  // now: 13:00
+  openPage(ui, 1);
+  ui.setLibrary(&photos);
+  ui.press(Button::Center);  // view the dated photo
   ui.render(fb);
   clockAt941.setTime(9 * 60 + 41);
   clockAt941.render(fb2);
   const Rect clock = {0, 0, 64, 27};
-  CHECK(sameRegion(fb, fb2, clock));             // the photo's time, not the current 13:00
+  CHECK(sameRegion(fb, fb2, clock));                   // the photo's time, not the current 13:00
   CHECK(regionHas(fb, {70, 0, 120, 27}, color::ink));  // "- June, 21, 2026"
-  ui.press(Button::Left);                        // an older demo photo: another time
+  ui.press(Button::Right);                             // undated name: current time + the name
   ui.render(fb2);
-  CHECK(!sameRegion(fb, fb2, {0, 0, WIDTH / 2 + 40, 27}));
+  CHECK(!sameRegion(fb, fb2, clock));
+  CHECK(regionHas(fb2, {70, 0, 120, 27}, color::ink));
 }
 
 TEST(camera_title_is_an_icon_not_a_label) {
@@ -691,16 +727,66 @@ TEST(down_enters_a_partly_filled_row_before_the_bottom_bar) {
   CHECK_EQ(ui.focus(), 4);
 }
 
-TEST(no_flash_when_no_photo_is_taken) {
+TEST(every_shutter_press_requests_a_photo) {
   Ui ui;
   openPage(ui, 0);
-  while (ui.photoCount() < MAX_PHOTOS) ui.press(Button::Center), ui.tick(FLASH_MS);
-  ui.press(Button::Center);  // storage full: nothing saved
-  CHECK_EQ(ui.photoCount(), MAX_PHOTOS);
-  CHECK(!ui.animating());  // so no shutter flash either
+  ui.press(Button::Center);
+  ui.tick(FLASH_MS);
+  ui.press(Button::Center);
+  CHECK_EQ(ui.takeCaptureRequests(), 2);  // the host saves both
 }
 
-// The Back button is the same pixels in the same place on every page that has one.
+TEST(pictures_show_the_librarys_thumbnails) {
+  Ui ui;
+  openPage(ui, 1);
+  ui.render(fb);
+  // Thumbnail 1 (top middle): its white stripe on the left, its color on the right.
+  const int x = 12 + 74, y = 38;
+  CHECK_EQ(fb.at(x + 8, y + 32), 0xFFFF);
+  CHECK_EQ(fb.at(x + 40, y + 32), FakeLibrary::COLORS[1]);
+  CHECK_EQ(fb.at(x, y), color::bg);  // rounded corner
+}
+
+TEST(pictures_show_placeholders_while_loading) {
+  FakeLibrary loading(3);
+  loading.ready = false;
+  Ui ui;
+  openPage(ui, 1);
+  ui.setLibrary(&loading);
+  ui.render(fb);
+  CHECK_EQ(fb.at(12 + 74 + 40, 38 + 32), color::tile);
+}
+
+TEST(pictures_empty_card) {
+  FakeLibrary none(0);
+  Ui ui;
+  openPage(ui, 1);
+  ui.setLibrary(&none);
+  ui.render(fb);
+  CHECK(regionHas(fb, {0, 90, WIDTH, 30}, color::text));  // "No photos"
+  ui.press(Button::Down);
+  ui.press(Button::Center);  // Back still works
+  CHECK(ui.screen() == Screen::Home);
+}
+
+TEST(viewer_draws_the_photo_and_follows_card_changes) {
+  FakeLibrary photos(5);
+  Ui ui;
+  openPage(ui, 1);
+  ui.setLibrary(&photos);
+  for (int i = 0; i < 4; i++) ui.press(Button::Right), ui.press(Button::Down);  // last photo (index 4)
+  ui.press(Button::Up);
+  ui.press(Button::Center);
+  CHECK(ui.screen() == Screen::Viewer);
+  ui.render(fb);
+  CHECK_EQ(fb.at(10, 100), 0xFFFF);                   // the photo's stripe, full width
+  CHECK_EQ(fb.at(200, 200), FakeLibrary::COLORS[ui.focus() % 5]);
+  photos.n = 2;  // photos deleted from the card meanwhile
+  ui.press(Button::B);
+  ui.press(Button::Up);
+  CHECK(ui.focus() < 2);  // focus stays on a photo that exists
+}
+
 TEST(back_button_is_identical_on_every_page) {
   const Rect back = {0, 206, WIDTH / 2, HEIGHT - 206};
   Ui pictures, settings;

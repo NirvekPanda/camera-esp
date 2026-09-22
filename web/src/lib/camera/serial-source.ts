@@ -137,6 +137,20 @@ export class SerialSource implements CameraSource {
     return new Blob([data], { type: "image/jpeg" });
   }
 
+  /** Decoded on the camera (its SD card, its JPEG decoder): the same pixels its screen shows. */
+  async getPixels(name: string, width: number, height: number) {
+    const payload = new Uint8Array([...u16Pair(width, height), ...encoder.encode(name)]);
+    const reply = await this.request(PacketType.PHOTO_PIXELS, payload, {
+      expect: PacketType.PIXELS,
+      timeoutMs: FILE_TIMEOUT_MS,
+    });
+    const view = new DataView(reply.buffer, reply.byteOffset, reply.byteLength);
+    if (view.getUint16(0, true) !== width || view.getUint16(2, true) !== height) {
+      throw new Error(`Unexpected image size for ${name}`);
+    }
+    return new Uint16Array(reply.slice(4).buffer); // RGB565, little-endian like the browser
+  }
+
   private request(
     type: number,
     payload?: Uint8Array,

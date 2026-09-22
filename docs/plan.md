@@ -136,6 +136,7 @@ Binary packets, so JPEGs need no base64:
 | ESP → site | `0x02` | `CAPTURED` | JSON `{name,size}` |
 | ESP → site | `0x03` | `FILE_LIST` | JSON `[{name,size}]` |
 | ESP → site | `0x04` | `FILE_DATA` | JPEG bytes |
+| ESP → site | `0x06` | `PIXELS` | u16 LE width, u16 LE height, then RGB565 LE pixels |
 | ESP → site | `0x05` | `OK` | none: reply to `SET_TIME`, `STREAM`, `MIRROR`, `VFLIP`, `RESOLUTION`, `FPS` |
 | ESP → site | `0x7F` | `ERROR` | UTF-8 message |
 | site → ESP | `0x81` | `SET_TIME` | u32 LE unix seconds |
@@ -147,6 +148,7 @@ Binary packets, so JPEGs need no base64:
 | site → ESP | `0x87` | `RESOLUTION` | u16 LE width, u16 LE height (one of `RESOLUTIONS`) |
 | site → ESP | `0x88` | `FPS` | u8 target frames per second |
 | site → ESP | `0x89` | `VFLIP` | u8 (1 = upside down, relative to the sensor's mounting) |
+| site → ESP | `0x8A` | `PHOTO_PIXELS` | u16 LE width, u16 LE height (≤ 240), UTF-8 file name. The photo from the SD card, decoded on the device, center-cropped and scaled: reply `PIXELS`. This is what the device UI shows, and how the emulator gets it |
 
 - **Every command gets exactly one reply, in order:** `OK`, its data packet (`CAPTURED`,
   `FILE_LIST`, `FILE_DATA`), or `ERROR` with a message for the UI. `FRAME`s are unsolicited and can
@@ -288,6 +290,15 @@ firmware/
 - **Loop:** handle any received commands, then send a `FRAME` whenever streaming and the fps
   interval has passed. Streaming starts only when the site sends `STREAM 1`, so an idle port gets no
   binary data.
+- **Photo library (`firmware/src/sd_photo_library.*`):** `SdPhotoLibrary` implements the device UI's
+  `PhotoLibrary` on the microSD card:
+  - Lists `/photos` newest first, using the shared `sortNewestFirst`.
+  - Decodes JPEGs with the camera library's `jpg2rgb565`, using its built-in 1/2, 1/4 or 1/8 scale
+    that best covers the target, then `scaleCover` for the exact size.
+  - Caches the last 8 decoded images in PSRAM (a screen of thumbnails plus the viewer image).
+
+  `LIST` and `PHOTO_PIXELS` already use it, so `make hwtest` exercises the same SD code the device
+  UI will use once the display is wired.
 - **SD card:** SPI, CS = GPIO21 (shared with the user LED, so the LED is unused). With no card,
   `CAPTURE` / `LIST` / `GET_FILE` reply `ERROR "No SD card"`, and streaming still works. A failed
   write deletes the partial file.

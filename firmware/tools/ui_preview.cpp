@@ -5,6 +5,7 @@
 
 #include "../lib/ui/src/st7789_emulator.h"
 #include "../lib/ui/src/ui.h"
+#include "../test_ui/fake_library.h"
 
 using namespace ui;
 
@@ -12,6 +13,7 @@ namespace {
 
 Framebuffer fb;
 St7789Emulator panel;
+FakeLibrary photos(5);
 
 void rgb(uint16_t p, int& r, int& g, int& b) {
   r = (p >> 11) * 255 / 31;
@@ -59,6 +61,7 @@ void show(Ui& device, const char* name, const char* title) {
 // A fresh device on home tile `page`, opened (0 Camera, 1 Pictures, 2 Settings).
 Ui opened(int page, Link link, int battery = 0) {
   Ui device;
+  device.setLibrary(&photos);
   device.setTime(14 * 60 + 23);
   device.setLink(link, battery);
   for (int i = 0; i < page; i++) device.press(Button::Right);

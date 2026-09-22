@@ -95,11 +95,22 @@ The Wii's pointer and big TV don't fit here. What changes:
   and the focused tile grows and gets the blue outline (the Wii hover). Page dots in the bottom bar
   show the position.
 - **Center** (or A) opens the focused page. On every page, **Back** is the bottom-left button (B
-  also goes back). The Pictures grid (which keeps its Back button) opens a photo with Center/A in a **full-screen
+  also goes back). **Pictures shows the photos on the SD card**, through the `PhotoLibrary` interface (`photos.h`):
+  - Names come newest first.
+  - Thumbnails and the viewer image are decoded to the device's sizes.
+  - While a thumbnail loads, it's a plain tile. With no photos, the page shows "No photos".
+  - On the ESP32, `SdPhotoLibrary` reads the card. In the emulator, the page fills the library from
+    the connected camera: with the USB board, pixels come from the board's own decode
+    (`PHOTO_PIXELS`); with a mock, the browser decodes them.
+  - The Camera app's shutter asks the host to save a photo (`takeCaptureRequests`), and the new
+    photo appears once it's on the card.
+
+  The Pictures grid (which keeps its Back button) opens a photo with Center/A in a **full-screen
   viewer**: just the photo and the nav bar, which shows **when the photo was taken**, its time
   and then its date (`10:30 - June, 21, 2026`). If the full month wouldn't fit before the status
-  icons, it's shortened (`Sep, 3, 2026`). The device records the time and date of every photo; the
-  emulator sets the date from the browser. Left/Right step through the photos,
+  icons, it's shortened (`Sep, 3, 2026`). The date and time come from the photo's
+  `YYYYMMDD-HHMMSS` file name, which the camera's clock sets when saving. Other names (`IMG_0001.jpg`)
+  show the name instead. Left/Right step through the photos,
   and B returns to the gallery.
   Settings change with Center, which toggles or cycles the value, because arrows never change
   values. The settings are Resolution, Mirror, Flip vertical, **Grid** (rule-of-thirds overlay on

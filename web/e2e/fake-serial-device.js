@@ -5,9 +5,9 @@
 (() => {
   const MAGIC = [0xa5, 0x5a];
   const T = {
-    FRAME: 0x01, CAPTURED: 0x02, FILE_LIST: 0x03, FILE_DATA: 0x04, OK: 0x05, ERROR: 0x7f,
+    FRAME: 0x01, CAPTURED: 0x02, FILE_LIST: 0x03, FILE_DATA: 0x04, OK: 0x05, PIXELS: 0x06, ERROR: 0x7f,
     SET_TIME: 0x81, CAPTURE: 0x82, LIST: 0x83, GET_FILE: 0x84, STREAM: 0x85, MIRROR: 0x86,
-    RESOLUTION: 0x87, FPS: 0x88, VFLIP: 0x89,
+    RESOLUTION: 0x87, FPS: 0x88, VFLIP: 0x89, PHOTO_PIXELS: 0x8a,
   };
   // Like the firmware: square crops arrive as VGA/HD. An OV2640 has no 1920×1080.
   const SENSOR_FRAME = { "480x480": [640, 480], "720x720": [1280, 720] };
@@ -125,6 +125,27 @@
         const name = new TextDecoder().decode(payload);
         const data = camera.files.get(name);
         return data ? send(T.FILE_DATA, data) : sendText(T.ERROR, `File not found: ${name}`);
+      }
+      case T.PHOTO_PIXELS: {
+        // Like the firmware: decode the stored photo, center-crop and scale it, reply RGB565 LE.
+        const w = view.getUint16(0, true), h = view.getUint16(2, true);
+        const name = new TextDecoder().decode(payload.slice(4));
+        const data = camera.files.get(name);
+        if (!data) return sendText(T.ERROR, `Couldn't read ${name}`);
+        const bitmap = await createImageBitmap(new Blob([data], { type: "image/jpeg" }));
+        const scale = Math.min(bitmap.width / w, bitmap.height / h);
+        const ctx = new OffscreenCanvas(w, h).getContext("2d");
+        ctx.drawImage(bitmap, (bitmap.width - w * scale) / 2, (bitmap.height - h * scale) / 2, w * scale, h * scale, 0, 0, w, h);
+        const rgba = ctx.getImageData(0, 0, w, h).data;
+        const out = new Uint8Array(4 + w * h * 2);
+        new DataView(out.buffer).setUint16(0, w, true);
+        new DataView(out.buffer).setUint16(2, h, true);
+        for (let i = 0; i < w * h; i++) {
+          const p = ((rgba[4 * i] >> 3) << 11) | ((rgba[4 * i + 1] >> 2) << 5) | (rgba[4 * i + 2] >> 3);
+          out[4 + 2 * i] = p & 0xff;
+          out[5 + 2 * i] = p >> 8;
+        }
+        return send(T.PIXELS, out);
       }
       default:
         return sendText(T.ERROR, `Unknown command 0x${type.toString(16)}`);

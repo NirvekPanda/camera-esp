@@ -37,7 +37,7 @@ ui-preview: ## Print the device UI screens in the terminal (truecolor)
 
 wasm: ## Build the device UI emulator for the site: web/public/wasm/device-ui.wasm
 	@mkdir -p web/public/wasm
-	emcc $(UI_FLAGS) -Oz -fno-rtti -fno-exceptions --no-entry -sSTANDALONE_WASM -sINITIAL_MEMORY=2mb -sSTACK_SIZE=256kb -sALLOW_MEMORY_GROWTH=0 \
+	emcc $(UI_FLAGS) -Oz -fno-rtti -fno-exceptions --no-entry -sSTANDALONE_WASM -sINITIAL_MEMORY=4mb -sSTACK_SIZE=256kb -sALLOW_MEMORY_GROWTH=0 \
 	  $(UI_SRC) firmware/test_ui/golden.cpp firmware/wasm/device_ui.cpp -o web/public/wasm/device-ui.wasm
 
 monitor: ## Open the serial monitor (shows raw protocol bytes while streaming)

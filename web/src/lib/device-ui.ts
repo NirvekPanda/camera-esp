@@ -6,6 +6,9 @@ export const PANEL_SIZE = 240;
 export const PREVIEW_Y = 28;
 export const PREVIEW_W = 240;
 export const PREVIEW_H = PANEL_SIZE - PREVIEW_Y;
+export const THUMB_SIZE = 64; // ui::THUMB_SIZE
+export const MAX_PHOTOS = 128; // HostLibrary::MAX in firmware/wasm/device_ui.cpp
+const NAME_MAX = 24; // ui::PHOTO_NAME_MAX, including the NUL
 
 // Must match ui::Button, ui::Screen and ui::Link in firmware/lib/ui/src/ui.h.
 export const Button = { Up: 0, Down: 1, Left: 2, Right: 3, Center: 4, A: 5, B: 6 } as const;
@@ -31,7 +34,6 @@ interface Exports {
   ui_init(): void;
   ui_press(button: number): void;
   ui_set_time(minutes: number): void;
-  ui_set_date(year: number, month: number, day: number): void;
   ui_set_link(link: number, batteryPercent: number): void;
   ui_frame(elapsedMs: number): number;
   ui_screen(): number;
@@ -39,6 +41,14 @@ interface Exports {
   ui_animating(): number;
   ui_flash(): number;
   ui_preview_buffer(): number;
+  ui_library_name(index: number): number;
+  ui_library_set_count(count: number): void;
+  ui_library_thumb(index: number): number;
+  ui_library_thumb_ready(index: number): void;
+  ui_library_image(): number;
+  ui_library_image_ready(index: number): void;
+  ui_library_wanted_image(): number;
+  ui_take_capture_requests(): number;
   ui_set_preview(on: number): void;
   ui_golden(): number;
   ui_golden_expected(): number;
@@ -52,8 +62,6 @@ export async function createDeviceUi(wasm: BufferSource) {
   return {
     press: (button: number) => e.ui_press(button),
     setTime: (minutesSinceMidnight: number) => e.ui_set_time(minutesSinceMidnight),
-    /** month is 1-12 */
-    setDate: (year: number, month: number, day: number) => e.ui_set_date(year, month, day),
     setLink: (link: number, batteryPercent = 0) => e.ui_set_link(link, batteryPercent),
     /** Advances time and returns the panel (240×240 RGB565), valid until the next call. */
     frame: (elapsedMs: number) => new Uint16Array(e.memory.buffer, e.ui_frame(elapsedMs), PANEL_SIZE * PANEL_SIZE),
@@ -65,6 +73,30 @@ export async function createDeviceUi(wasm: BufferSource) {
       if (frame) new Uint16Array(e.memory.buffer, e.ui_preview_buffer(), PREVIEW_W * PREVIEW_H).set(frame);
       e.ui_set_preview(frame ? 1 : 0);
     },
+    /** The camera's photos, newest first (thumbnails and the viewer image follow). */
+    setPhotos: (names: string[]) => {
+      const bytes = new TextEncoder();
+      names.slice(0, MAX_PHOTOS).forEach((name, i) => {
+        const slot = new Uint8Array(e.memory.buffer, e.ui_library_name(i), NAME_MAX);
+        slot.fill(0);
+        slot.set(bytes.encode(name).slice(0, NAME_MAX - 1));
+      });
+      e.ui_library_set_count(Math.min(names.length, MAX_PHOTOS));
+    },
+    /** THUMB_SIZE x THUMB_SIZE RGB565 for photo index. */
+    setThumbnail: (index: number, pixels: Uint16Array) => {
+      new Uint16Array(e.memory.buffer, e.ui_library_thumb(index), THUMB_SIZE * THUMB_SIZE).set(pixels);
+      e.ui_library_thumb_ready(index);
+    },
+    /** PREVIEW_W x PREVIEW_H RGB565 for the viewer, for photo index. */
+    setImage: (index: number, pixels: Uint16Array) => {
+      new Uint16Array(e.memory.buffer, e.ui_library_image(), PREVIEW_W * PREVIEW_H).set(pixels);
+      e.ui_library_image_ready(index);
+    },
+    /** The photo the viewer is waiting for, or -1. */
+    wantedImage: () => e.ui_library_wanted_image(),
+    /** Shutter presses since the last call: the page saves that many photos. */
+    takeCaptureRequests: () => e.ui_take_capture_requests(),
     /** Flash on: a light ring around the physical display, outside the panel. */
     flashOn: () => e.ui_flash() !== 0,
     golden: () => e.ui_golden() >>> 0,
@@ -73,22 +105,3 @@ export async function createDeviceUi(wasm: BufferSource) {
 }
 
 export type DeviceUi = Awaited<ReturnType<typeof createDeviceUi>>;
-
-/** RGBA8888 → RGB565 (drops the low bits, like the camera's own RGB565 output). */
-export function rgbaToRgb565(src: Uint8ClampedArray, dst: Uint16Array) {
-  for (let i = 0; i < dst.length; i++) {
-    dst[i] = ((src[4 * i] >> 3) << 11) | ((src[4 * i + 1] >> 2) << 5) | (src[4 * i + 2] >> 3);
-  }
-}
-
-/** RGB565 → RGBA8888 with bit replication, so full white/black map to 255/0. */
-export function rgb565ToRgba(src: Uint16Array, dst: Uint8ClampedArray) {
-  for (let i = 0; i < src.length; i++) {
-    const p = src[i];
-    const r = p >> 11, g = (p >> 5) & 0x3f, b = p & 0x1f;
-    dst[4 * i] = (r << 3) | (r >> 2);
-    dst[4 * i + 1] = (g << 2) | (g >> 4);
-    dst[4 * i + 2] = (b << 3) | (b >> 2);
-    dst[4 * i + 3] = 255;
-  }
-}

@@ -8,14 +8,15 @@ import {
   KEY_TO_BUTTON,
   Link,
   PANEL_SIZE,
+  MAX_PHOTOS,
   PREVIEW_H,
   PREVIEW_W,
+  THUMB_SIZE,
   Screen,
   createDeviceUi,
-  rgb565ToRgba,
-  rgbaToRgb565,
   type DeviceUi,
 } from "@/lib/device-ui";
+import { rgb565ToRgba, rgbaToRgb565 } from "@/lib/rgb565";
 
 const PAD = [
   { button: Button.Up, label: "Up", symbol: "▲" },
@@ -31,9 +32,16 @@ const FACE = [
 
 /** The camera's 240×240 display, emulated: the device UI in WebAssembly driving a virtual ST7789. */
 export function DeviceScreen() {
-  const { source, status } = useCamera();
+  const { source, status, files, capture } = useCamera();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const uiRef = useRef<DeviceUi | null>(null);
+  const [ui, setUi] = useState<DeviceUi | null>(null);
+  const thumbCache = useRef(new Map<string, Uint16Array>()); // by file name, for the current camera
+  const captureRef = useRef(capture); // the context's functions change every render
+
+  useEffect(() => {
+    captureRef.current = capture;
+  }, [capture]);
   const linkRef = useRef<number>(Link.None);
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState(false);
@@ -58,12 +66,12 @@ export function DeviceScreen() {
       .then((ui) => {
         if (cancelled) return;
         uiRef.current = ui;
+        setUi(ui);
         let last = performance.now();
         let flashOn = false;
         const draw = (now: number) => {
           const clock = new Date();
           ui.setTime(clock.getHours() * 60 + clock.getMinutes());
-          ui.setDate(clock.getFullYear(), clock.getMonth() + 1, clock.getDate()); // photos record it
           ui.setLink(linkRef.current);
           // rAF's frame time can precede `last` on the first frame: clamp to 0..100 ms.
           rgb565ToRgba(ui.frame(Math.round(Math.min(Math.max(now - last, 0), 100))), image.data);
@@ -103,6 +111,48 @@ export function DeviceScreen() {
       uiRef.current?.setPreview(null); // back to the color bars
     };
   }, [source]);
+
+  // The device's Pictures page shows the connected camera's photos (its SD card): names from the
+  // camera's file list, thumbnails and the viewer image decoded to the device's sizes.
+  useEffect(() => {
+    thumbCache.current.clear(); // a different camera
+  }, [source]);
+
+  useEffect(() => {
+    if (!ui) return;
+    const names = source ? files.map((f) => f.name).slice(0, MAX_PHOTOS) : [];
+    ui.setPhotos(names);
+    ui.takeCaptureRequests(); // presses from before this camera was connected don't count
+    if (!source) return;
+    let cancelled = false;
+    let loadingImage = -1;
+    const report = (e: unknown) => !cancelled && setError(e instanceof Error ? e.message : String(e));
+    void (async () => {
+      for (const [i, name] of names.entries()) {
+        const pixels = thumbCache.current.get(name) ?? (await source.getPixels(name, THUMB_SIZE, THUMB_SIZE));
+        if (cancelled) return;
+        thumbCache.current.set(name, pixels);
+        ui.setThumbnail(i, pixels);
+      }
+    })().catch(report);
+    const poll = setInterval(() => {
+      // Shutter presses save photos through the camera connection; its file list then updates.
+      for (let n = ui.takeCaptureRequests(); n > 0; n--) void captureRef.current();
+      const wanted = ui.wantedImage();
+      if (wanted >= 0 && wanted !== loadingImage && names[wanted]) {
+        loadingImage = wanted;
+        source
+          .getPixels(names[wanted], PREVIEW_W, PREVIEW_H)
+          .then((pixels) => !cancelled && ui.setImage(wanted, pixels))
+          .catch(report)
+          .finally(() => (loadingImage = -1));
+      }
+    }, 100);
+    return () => {
+      cancelled = true;
+      clearInterval(poll);
+    };
+  }, [ui, source, files]);
 
   const press = (button: number) => uiRef.current?.press(button);
 
