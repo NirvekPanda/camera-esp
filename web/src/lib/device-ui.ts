@@ -31,6 +31,7 @@ interface Exports {
   ui_init(): void;
   ui_press(button: number): void;
   ui_set_time(minutes: number): void;
+  ui_set_date(year: number, month: number, day: number): void;
   ui_set_link(link: number, batteryPercent: number): void;
   ui_frame(elapsedMs: number): number;
   ui_screen(): number;
@@ -51,6 +52,8 @@ export async function createDeviceUi(wasm: BufferSource) {
   return {
     press: (button: number) => e.ui_press(button),
     setTime: (minutesSinceMidnight: number) => e.ui_set_time(minutesSinceMidnight),
+    /** month is 1-12 */
+    setDate: (year: number, month: number, day: number) => e.ui_set_date(year, month, day),
     setLink: (link: number, batteryPercent = 0) => e.ui_set_link(link, batteryPercent),
     /** Advances time and returns the panel (240×240 RGB565), valid until the next call. */
     frame: (elapsedMs: number) => new Uint16Array(e.memory.buffer, e.ui_frame(elapsedMs), PANEL_SIZE * PANEL_SIZE),

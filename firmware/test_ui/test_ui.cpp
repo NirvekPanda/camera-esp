@@ -8,6 +8,7 @@
 #include "../lib/ui/src/st7789.h"
 #include "../lib/ui/src/st7789_emulator.h"
 #include "../lib/ui/src/ui.h"
+#include "../src/jpeg.h"
 #include "golden.h"
 
 using namespace ui;
@@ -422,6 +423,63 @@ TEST(mirror_and_flip_apply_to_the_live_preview) {
   ui.render(fb);
   CHECK_EQ(fb.at(0, PREVIEW_Y), frame[PREVIEW_W * PREVIEW_H - 1]);  // top-left shows the bottom-right
   CHECK_EQ(fb.at(PREVIEW_W - 1, HEIGHT - 1), frame[0]);
+}
+
+TEST(jpeg_size_reads_the_sof_header) {
+  // SOI, an APP0 segment to skip, then a baseline SOF0 for 2048x1536.
+  const uint8_t jpeg[] = {0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x04, 0x00, 0x00, 0xFF, 0xC0, 0x00, 0x11,
+                          0x08, 0x06, 0x00, 0x08, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00};
+  uint16_t w = 0, h = 0;
+  CHECK(jpegSize(jpeg, sizeof jpeg, w, h));
+  CHECK_EQ(w, 2048);
+  CHECK_EQ(h, 1536);
+  const uint8_t progressive[] = {0xFF, 0xD8, 0xFF, 0xC2, 0x00, 0x11, 0x08, 0x00, 0xF0, 0x00, 0xF0, 0, 0, 0};
+  CHECK(jpegSize(progressive, sizeof progressive, w, h));
+  CHECK_EQ(w, 240);
+  CHECK_EQ(h, 240);
+  const uint8_t notJpeg[] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B};
+  CHECK(!jpegSize(notJpeg, sizeof notJpeg, w, h));
+  CHECK(!jpegSize(jpeg, 8, w, h));  // truncated before the SOF
+}
+
+TEST(photo_date_format) {
+  char out[32];
+  photoDate(out, 2026, 6, 21, 1000);
+  CHECK(strcmp(out, "June, 21, 2026") == 0);
+  photoDate(out, 2026, 9, 3, 1000);
+  CHECK(strcmp(out, "September, 3, 2026") == 0);
+  photoDate(out, 2026, 9, 3, 80);  // not enough room for the full month
+  CHECK(strcmp(out, "Sep, 3, 2026") == 0);
+  photoDate(out, 2026, 9, 28, 67);  // 12-hour clock + "100%" battery: drop the year too
+  CHECK(strcmp(out, "Sep, 28") == 0);
+}
+
+TEST(viewer_nav_shows_when_the_photo_was_taken) {
+  Ui ui, clockAt941;
+  ui.setDate(2026, 6, 21);
+  ui.setTime(9 * 60 + 41);
+  openPage(ui, 0);
+  ui.press(Button::Center);  // photo taken at 09:41 on June 21
+  ui.tick(FLASH_MS);
+  ui.setTime(13 * 60);  // later
+  ui.press(Button::B);
+  ui.press(Button::Right);
+  ui.press(Button::Center);
+  ui.tick(OPEN_MS);
+  for (int i = 0; i < ui.photoCount(); i++) ui.press(Button::Right), ui.press(Button::Down);
+  ui.press(Button::Up);  // from Back to the newest photo
+  ui.press(Button::Center);
+  CHECK(ui.screen() == Screen::Viewer);
+  CHECK_EQ(ui.focus(), ui.photoCount() - 1);
+  ui.render(fb);
+  clockAt941.setTime(9 * 60 + 41);
+  clockAt941.render(fb2);
+  const Rect clock = {0, 0, 64, 27};
+  CHECK(sameRegion(fb, fb2, clock));             // the photo's time, not the current 13:00
+  CHECK(regionHas(fb, {70, 0, 120, 27}, color::ink));  // "- June, 21, 2026"
+  ui.press(Button::Left);                        // an older demo photo: another time
+  ui.render(fb2);
+  CHECK(!sameRegion(fb, fb2, {0, 0, WIDTH / 2 + 40, 27}));
 }
 
 TEST(camera_title_is_an_icon_not_a_label) {

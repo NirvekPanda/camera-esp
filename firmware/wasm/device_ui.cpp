@@ -27,6 +27,7 @@ EMSCRIPTEN_KEEPALIVE void ui_press(int button) {
 }
 
 EMSCRIPTEN_KEEPALIVE void ui_set_time(int minutesSinceMidnight) { device.setTime(minutesSinceMidnight); }
+EMSCRIPTEN_KEEPALIVE void ui_set_date(int year, int month, int day) { device.setDate(year, month, day); }
 
 // 0 none, 1 USB, 2 battery (ui::Link).
 EMSCRIPTEN_KEEPALIVE void ui_set_link(int link, int batteryPercent) {

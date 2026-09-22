@@ -63,6 +63,7 @@ export function DeviceScreen() {
         const draw = (now: number) => {
           const clock = new Date();
           ui.setTime(clock.getHours() * 60 + clock.getMinutes());
+          ui.setDate(clock.getFullYear(), clock.getMonth() + 1, clock.getDate()); // photos record it
           ui.setLink(linkRef.current);
           // rAF's frame time can precede `last` on the first frame: clamp to 0..100 ms.
           rgb565ToRgba(ui.frame(Math.round(Math.min(Math.max(now - last, 0), 100))), image.data);

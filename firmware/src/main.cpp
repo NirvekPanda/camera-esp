@@ -4,10 +4,10 @@
 #include <SD.h>
 #include <SPI.h>
 #include <esp_camera.h>
-#include <img_converters.h>
 #include <sys/time.h>
 
 #include "camera_pins.h"
+#include "jpeg.h"
 #include "protocol.h"
 
 using namespace protocol;
@@ -29,8 +29,18 @@ const FrameSize FRAME_SIZES[] = {
     {1280, 720, FRAMESIZE_HD},     {1600, 1200, FRAMESIZE_UXGA}, {1920, 1080, FRAMESIZE_FHD},
 };
 
+// Photos use the sensor's largest size and a finer JPEG quality, whatever the stream is set to.
+struct PhotoSize {
+  framesize_t size;
+  uint16_t width, height;
+};
+const PhotoSize OV3660_PHOTO = {FRAMESIZE_QXGA, 2048, 1536};
+const PhotoSize OV2640_PHOTO = {FRAMESIZE_UXGA, 1600, 1200};
+constexpr int STREAM_QUALITY = 12, PHOTO_QUALITY = 10;  // lower = finer
+
 sensor_t* sensor = nullptr;  // null if the camera failed to start
-const FrameSize* requested = &FRAME_SIZES[0];  // may be smaller than the sensor frame (square crops)
+PhotoSize photo = OV2640_PHOTO;
+const FrameSize* requested = &FRAME_SIZES[0];  // the stream size the site asked for
 bool baseVflip = false;  // true for sensors mounted upside down; VFLIP toggles relative to it
 bool sdReady = false;
 bool timeSynced = false;
@@ -39,7 +49,8 @@ uint32_t frameIntervalMs = 1000 / 15;
 uint32_t lastFrameMs = 0;
 Parser parser;
 
-bool initCamera() {
+// Frame buffers are sized at init for `size`: it must be the largest size the sensor will use.
+bool startCamera(framesize_t size) {
   camera_config_t config = {};
   config.pin_pwdn = PWDN_GPIO_NUM;
   config.pin_reset = RESET_GPIO_NUM;
@@ -61,15 +72,21 @@ bool initCamera() {
   config.ledc_timer = LEDC_TIMER_0;
   config.ledc_channel = LEDC_CHANNEL_0;
   config.pixel_format = PIXFORMAT_JPEG;
-  // Frame buffers are sized at init, so allocate for UXGA and then drop to the 240x240 default.
-  config.frame_size = FRAMESIZE_UXGA;
-  config.jpeg_quality = 12;
+  config.frame_size = size;
+  config.jpeg_quality = STREAM_QUALITY;
   config.fb_count = 2;
   config.fb_location = CAMERA_FB_IN_PSRAM;
   config.grab_mode = CAMERA_GRAB_LATEST;
-  if (esp_camera_init(&config) != ESP_OK) return false;
+  return esp_camera_init(&config) == ESP_OK;
+}
 
+bool initCamera() {
+  // One init with buffers for QXGA, the largest photo: the driver clamps it to the sensor's
+  // maximum (UXGA on an OV2640). Never deinit and re-init: on the S3 that hangs in the DMA
+  // teardown ("gdma_disconnect: no peripheral is connected") and the firmware stops responding.
+  if (!startCamera(FRAMESIZE_QXGA)) return false;
   sensor = esp_camera_sensor_get();
+  if (sensor->id.PID == OV3660_PID) photo = OV3660_PHOTO;
   baseVflip = sensor->id.PID == OV3660_PID;  // OV3660 modules are mounted flipped
   sensor->set_vflip(sensor, baseVflip);
   sensor->set_framesize(sensor, FRAMESIZE_240X240);
@@ -78,25 +95,6 @@ bool initCamera() {
 
 void ok() { send(protocol::OK); }
 void sendError(const String& message) { send(ERROR, message); }
-
-// Center-crop a JPEG frame to width x height (decode, crop, re-encode). Used for 480x480 and
-// 720x720 photos, which the sensor can't produce natively. Takes a few hundred ms: stills only.
-bool cropJpeg(const camera_fb_t* fb, uint16_t width, uint16_t height, uint8_t** out, size_t* outLength) {
-  const size_t srcWidth = fb->width, srcHeight = fb->height;
-  uint8_t* rgb = static_cast<uint8_t*>(ps_malloc(srcWidth * srcHeight * 3));
-  if (!rgb) return false;
-  bool ok = fmt2rgb888(fb->buf, fb->len, PIXFORMAT_JPEG, rgb);
-  if (ok) {
-    const size_t x0 = (srcWidth - width) / 2, y0 = (srcHeight - height) / 2;
-    // In place: each row moves to an earlier position; memmove handles the overlap.
-    for (size_t y = 0; y < height; y++) {
-      memmove(rgb + y * width * 3, rgb + ((y + y0) * srcWidth + x0) * 3, width * 3);
-    }
-    ok = fmt2jpg(rgb, width * height * 3, width, height, PIXFORMAT_RGB888, 90, out, outLength);
-  }
-  free(rgb);
-  return ok;
-}
 
 String photoPath(const String& name) { return String(PHOTO_DIR) + "/" + name; }
 
@@ -139,27 +137,43 @@ void setResolution(uint16_t width, uint16_t height) {
   sendError(String("Unknown resolution ") + width + "×" + height);
 }
 
+// Switches the sensor to the photo size and quality and takes one frame at that size. Frames
+// queued before the switch are still the old size, but the driver reports the *new* size in
+// fb->width/height, so check the JPEG's own header instead.
+camera_fb_t* takePhoto() {
+  sensor->set_quality(sensor, PHOTO_QUALITY);
+  sensor->set_framesize(sensor, photo.size);
+  camera_fb_t* fb = nullptr;
+  for (int attempt = 0; attempt < 8 && !fb; attempt++) {
+    fb = esp_camera_fb_get();
+    uint16_t width = 0, height = 0;
+    if (fb && !(jpegSize(fb->buf, fb->len, width, height) && width == photo.width && height == photo.height)) {
+      esp_camera_fb_return(fb);
+      fb = nullptr;
+    }
+  }
+  return fb;
+}
+
+void resumeStream() {
+  sensor->set_framesize(sensor, requested->size);
+  sensor->set_quality(sensor, STREAM_QUALITY);
+}
+
 void capture() {
   if (!sdReady) return sendError("No SD card");
-  camera_fb_t* fb = esp_camera_fb_get();
-  if (!fb) return sendError("Camera capture failed");
-  const uint8_t* data = fb->buf;
-  size_t size = fb->len;
-  uint8_t* cropped = nullptr;
-  // Square sizes arrive as VGA/HD frames; crop the photo to what was asked for.
-  bool crop = fb->width > requested->width && fb->height >= requested->height;
-  if (crop && !cropJpeg(fb, requested->width, requested->height, &cropped, &size)) {
-    esp_camera_fb_return(fb);
-    return sendError("Couldn't crop the photo (out of memory?)");
+  camera_fb_t* fb = takePhoto();
+  if (!fb) {
+    resumeStream();
+    return sendError("Camera capture failed");
   }
-  if (cropped) data = cropped;
-
   String name = nextPhotoName();
   File file = SD.open(photoPath(name), FILE_WRITE);
-  bool written = file && file.write(data, size) == size;
+  size_t size = fb->len;
+  bool written = file && file.write(fb->buf, size) == size;
   file.close();
-  free(cropped);
   esp_camera_fb_return(fb);
+  resumeStream();
   if (!written) {
     SD.remove(photoPath(name));  // don't leave a truncated photo behind
     return sendError("Couldn't write to the SD card");

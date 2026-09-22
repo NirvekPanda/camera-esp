@@ -41,6 +41,7 @@ class Ui {
   void render(Framebuffer& fb) const;
 
   void setTime(int minutesSinceMidnight) { minutes_ = minutesSinceMidnight % (24 * 60); }
+  void setDate(int year, int month, int day) { today_ = {int16_t(year), int8_t(month), int8_t(day), 0}; }
   // Live camera frame for the Camera app (PREVIEW_W x PREVIEW_H RGB565, row-major), or nullptr
   // for none: the app then shows color bars. The caller keeps the buffer alive and current.
   void setPreview(const uint16_t* pixels) { preview_ = pixels; }
@@ -63,6 +64,11 @@ class Ui {
 
  private:
   void renderNavBar(Framebuffer& fb, const char* title) const;
+  struct Shot {  // when a photo was taken
+    int16_t year;
+    int8_t month, day;
+    int16_t minutes;
+  };
   void renderBottomBar(Framebuffer& fb, int focus, const char* primary) const;
   void renderHome(Framebuffer& fb) const;
   void renderCamera(Framebuffer& fb) const;
@@ -93,7 +99,15 @@ class Ui {
   int settingFocus_ = 0, resolution_ = RESOLUTION_COUNT - 1;  // 1920x1080, the site's default
   bool mirrored_ = false, vflipped_ = false, grid_ = false, clock12_ = false, flash_ = false;
   const uint16_t* preview_ = nullptr;
+  Shot today_ = {2026, 1, 1, 0};  // date from setDate; minutes come from minutes_
+  // The demo photos' times; new photos record the time they're taken.
+  Shot shots_[MAX_PHOTOS] = {{2026, 6, 21, 9 * 60 + 5},  {2026, 6, 21, 10 * 60 + 30}, {2026, 6, 20, 12 * 60 + 15},
+                             {2026, 6, 18, 15 * 60 + 45}, {2026, 6, 14, 18 * 60 + 20}};
 };
+
+// "June, 21, 2026" if it fits in maxWidth px, else "Jun, 21, 2026", else "Jun, 21".
+// out must hold 24 chars.
+void photoDate(char* out, int year, int month, int day, int maxWidth);
 
 // Ease-out cubic on 0..1024 fixed point (no floats: identical results on every target).
 int easeOut(uint32_t elapsed, uint32_t duration);

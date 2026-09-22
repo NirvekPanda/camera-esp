@@ -132,6 +132,27 @@ describe("createDeviceUi (real WASM build)", () => {
     expect(panel[(PREVIEW_Y + 30) * PANEL_SIZE + 5]).toBe(0xffff); // first color bar is white
   });
 
+  it("the photo viewer's nav bar shows the date the photo was taken", async () => {
+    const takeAndView = async (month: number) => {
+      const ui = await createDeviceUi(wasm);
+      ui.setDate(2026, month, 21);
+      ui.press(Button.Center);
+      ui.frame(300); // Camera
+      ui.press(Button.Center); // shoot
+      ui.press(Button.B);
+      ui.press(Button.Right);
+      ui.press(Button.Center);
+      ui.frame(300); // Pictures
+      ui.press(Button.Right);
+      ui.press(Button.Right);
+      ui.press(Button.Down); // the newest (6th) photo: row 2, column 3
+      ui.press(Button.Center);
+      expect(ui.screen()).toBe(Screen.Viewer);
+      return ui.frame(16).slice(0, 27 * PANEL_SIZE);
+    };
+    expect(await takeAndView(6)).not.toEqual(await takeAndView(12)); // "June, 21, 2026" vs "December, 21, 2026"
+  });
+
   it("shows the USB icon only when linked", async () => {
     const ui = await createDeviceUi(wasm);
     const corner = (panel: Uint16Array) => panel.slice(13 * PANEL_SIZE + 200, 13 * PANEL_SIZE + 240); // icon row
