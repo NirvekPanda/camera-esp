@@ -288,7 +288,9 @@ test.describe("Pictures page with the camera's SD card", () => {
     await page.keyboard.press("b");
     await page.keyboard.press("ArrowRight");
     await page.keyboard.press("Enter"); // Pictures
-    await expect.poll(async () => isGreen(await pixel(page, 12 + 44, 38 + 32))).toBe(true);
+    // On Pictures with the new photo's thumbnail. The keys land before the next frame is drawn, so
+    // the thumbnail pixel alone could still be the camera's green live view.
+    await expect.poll(async () => (await onPictures(page)) && isGreen(await pixel(page, 12 + 44, 38 + 32))).toBe(true);
     await page.getByRole("link", { name: "Camera" }).click();
     await expect(page.getByRole("heading", { name: "Photos (1)" })).toBeVisible(); // same photo, same list
   });
