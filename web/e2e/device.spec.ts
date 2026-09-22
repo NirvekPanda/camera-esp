@@ -68,6 +68,34 @@ test("arrow keys and Enter drive the 5-way switch", async ({ page }) => {
   await expect.poll(() => pixel(page, 22, 48)).not.toEqual(FIRST_THUMB); // home again
 });
 
+test("arrow keys, Space and Enter work without clicking the display first", async ({ page }) => {
+  await openDeviceTab(page);
+  await page.keyboard.press("ArrowRight"); // focus is on the page, not the canvas
+  await page.keyboard.press(" "); // Space = Center: open Pictures
+  await expect.poll(() => pixel(page, 22, 48)).toEqual(FIRST_THUMB);
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown"); // Back
+  await page.keyboard.press("Enter"); // Enter = Center
+  await expect.poll(() => pixel(page, 22, 48)).not.toEqual(FIRST_THUMB);
+  expect(await page.evaluate(() => window.scrollY)).toBe(0); // arrows/Space didn't scroll the page
+});
+
+test("after clicking a pad button, Space still means Center", async ({ page }) => {
+  await openDeviceTab(page);
+  await page.getByRole("button", { name: "Right" }).click(); // focus stays on that button
+  await page.keyboard.press(" "); // must press Center once, not click "Right" again
+  await expect.poll(() => pixel(page, 22, 48)).toEqual(FIRST_THUMB); // Pictures, not Settings
+});
+
+test("keys typed into other controls don't reach the emulator", async ({ page }) => {
+  await openDeviceTab(page);
+  await page.getByLabel("Camera source").focus();
+  await page.keyboard.press("ArrowDown"); // changes the select, not the device
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(300);
+  expect(await pixel(page, 22, 48)).not.toEqual(FIRST_THUMB);
+});
+
 test("the on-screen pad works like the keys", async ({ page }) => {
   await openDeviceTab(page);
   await page.getByRole("button", { name: "Right" }).click();

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useCamera } from "@/context/camera-context";
 import {
   Button,
@@ -80,12 +80,20 @@ export function DeviceScreen() {
 
   const press = (button: number) => uiRef.current?.press(button);
 
-  function onKeyDown(e: KeyboardEvent) {
-    const button = KEY_TO_BUTTON[e.key];
-    if (button === undefined) return;
-    e.preventDefault();
-    press(button);
-  }
+  // Keys drive the device without clicking the display first. Input controls outside the emulator
+  // (the header's select and buttons) keep their own keys.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const button = KEY_TO_BUTTON[e.key];
+      const target = e.target as HTMLElement;
+      if (button === undefined || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (target.closest("input, select, textarea, button, [contenteditable]") && !target.closest(".device")) return;
+      e.preventDefault(); // no page scroll, and a focused pad button doesn't also click
+      uiRef.current?.press(button);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   return (
     <section className="device" aria-label="Device screen emulator">
@@ -99,7 +107,6 @@ export function DeviceScreen() {
             height={PANEL_SIZE}
             tabIndex={0}
             aria-label="Device screen"
-            onKeyDown={onKeyDown}
           />
         </div>
         <div className="device-controls">

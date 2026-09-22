@@ -103,6 +103,10 @@ The Wii's pointer and big TV don't fit here. What changes:
   and the list scrolls to keep focus in view.
 - **Camera:** a full-screen picture under the nav bar, with no buttons on screen. A takes a picture
   (a white blink), B toggles the flash, and Center returns to Home.
+- **Emulator keyboard:** arrow keys move, **Space and Enter are Center**, and `a`/`b` (any case)
+  are A and B. They work anywhere on the Device tab without clicking the display first, except
+  while typing in a form control. Browser defaults are cancelled, so the page doesn't scroll and a
+  focused pad button doesn't also click.
 - **Flash:** a light ring *around* the physical display, outside the 240×240 panel. On the panel,
   a bolt icon sits in the status area to the left of the USB/battery icon. The emulator draws the
   ring as a 20-panel-pixel white frame around the display (`ui_flash()`).
