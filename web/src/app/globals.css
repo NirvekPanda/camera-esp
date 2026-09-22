@@ -480,3 +480,13 @@ main {
 .dpad-center { grid-area: 2 / 2; border-radius: 50%; }
 .dpad-right { grid-area: 2 / 3; }
 .dpad-down { grid-area: 3 / 2; }
+
+/* Inline in the header row: long results truncate (full text in the tooltip), never wrap. */
+.firmware-result {
+  max-width: 24ch;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 0.85rem;
+  color: var(--muted);
+}

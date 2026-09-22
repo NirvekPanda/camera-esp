@@ -48,6 +48,7 @@ export class SerialSource implements CameraSource {
   private closing = false;
   private alive = false; // the read loop is running
   private failure: Error | null = null;
+  private closing_: Promise<void> | null = null;
 
   async connect() {
     if (!("serial" in navigator)) throw new Error("WebSerial isn't supported in this browser");
@@ -69,7 +70,13 @@ export class SerialSource implements CameraSource {
     await this.request(PacketType.STREAM, u8(1));
   }
 
-  async disconnect() {
+  // Idempotent: every caller awaits the same close, so the port is free once any of them resolves.
+  disconnect() {
+    this.closing_ ??= this.close();
+    return this.closing_;
+  }
+
+  private async close() {
     if (!this.port) return;
     this.closing = true;
     // Best effort: the device may already be gone, and closing must still release the port.

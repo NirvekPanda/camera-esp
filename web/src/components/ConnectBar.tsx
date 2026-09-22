@@ -4,11 +4,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { SOURCE_OPTIONS, useCamera, type SourceId } from "@/context/camera-context";
+import { FirmwareButton } from "./FirmwareButton";
 
 export function ConnectBar() {
   const { status, error, connect, disconnect } = useCamera();
   const [choice, setChoice] = useState<SourceId>("usb");
   const onDevice = usePathname().startsWith("/device");
+  const [updating, setUpdating] = useState(false); // firmware update holds the serial port
 
   return (
     <header className="bar">
@@ -36,10 +38,12 @@ export function ConnectBar() {
         </select>
         <button
           onClick={status === "connected" ? disconnect : () => connect(choice)}
-          disabled={status === "connecting"}
+          disabled={status === "connecting" || updating}
         >
           {status === "connected" ? "Disconnect" : "Connect"}
         </button>
+        <FirmwareButton onBusyChange={setUpdating} />
+        {/* Always the far right of the row. */}
         <span className="status" data-status={status} role="status">
           {status}
         </span>

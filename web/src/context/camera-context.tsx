@@ -32,6 +32,7 @@ interface CameraContextValue {
   fps: number;
   connect(id: SourceId): Promise<void>;
   disconnect(): void;
+  release(): Promise<void>; // disconnect and wait until the serial port is free
   capture(): Promise<void>;
   toggleMirror(): Promise<void>;
   toggleVflip(): Promise<void>;
@@ -125,6 +126,12 @@ export function CameraProvider({ children }: { children: ReactNode }) {
     setFiles([]);
   }
 
+  async function release() {
+    const current = source;
+    disconnect();
+    await current?.disconnect();
+  }
+
   async function capture() {
     if (!source) return;
     try {
@@ -171,6 +178,7 @@ export function CameraProvider({ children }: { children: ReactNode }) {
         ...settings,
         connect,
         disconnect,
+        release,
         capture,
         toggleMirror: () => updateSetting("mirrored", !settingsRef.current.mirrored),
         toggleVflip: () => updateSetting("vflip", !settingsRef.current.vflip),
