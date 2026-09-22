@@ -291,7 +291,7 @@ void Ui::renderNavBar(Framebuffer& fb, const char* title) const {
   int right = WIDTH - 6;
   if (link_ == Link::Usb) right = drawUsb(fb, WIDTH - 32, BAR_H / 2) - 8;
   if (link_ == Link::Battery) right = drawBattery(fb, WIDTH - 6, BAR_H / 2, battery_) - 8;
-  if (screen_ == Screen::Camera && flash_) drawFlash(fb, right, BAR_H / 2);
+  if (flashOn()) drawFlash(fb, right, BAR_H / 2);
 }
 
 void Ui::renderHome(Framebuffer& fb) const {

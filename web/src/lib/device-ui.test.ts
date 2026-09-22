@@ -37,6 +37,8 @@ describe("KEY_TO_BUTTON", () => {
       " ": Button.Center,
       a: Button.A,
       b: Button.B,
+      A: Button.A, // Caps Lock / Shift
+      B: Button.B,
     });
   });
 });

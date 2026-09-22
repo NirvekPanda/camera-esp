@@ -441,6 +441,18 @@ TEST(twelve_hour_clock) {
   CHECK(!sameRegion(fb, fb2, clock));  // 12:05 AM vs 12:05 PM
 }
 
+TEST(flash_is_only_active_inside_the_camera) {
+  Ui ui;
+  openPage(ui, 0);
+  ui.press(Button::B);
+  CHECK(ui.flashOn());
+  ui.press(Button::Center);  // home: the ring around the display must go dark
+  CHECK(!ui.flashOn());
+  ui.press(Button::Center);
+  ui.tick(OPEN_MS);
+  CHECK(ui.flashOn());  // the setting is remembered when the camera reopens
+}
+
 TEST(flash_icon_sits_with_the_status_icons) {
   Ui ui;
   openPage(ui, 0);

@@ -49,7 +49,8 @@ class Ui {
   bool vflipped() const { return vflipped_; }
   bool grid() const { return grid_; }        // rule-of-thirds overlay on the camera
   bool clock12() const { return clock12_; }  // 12-hour clock with AM/PM
-  bool flashOn() const { return flash_; }
+  // The flash only works in the camera; the setting is kept for when it reopens.
+  bool flashOn() const { return screen_ == Screen::Camera && flash_; }
 
  private:
   void renderNavBar(Framebuffer& fb, const char* title) const;

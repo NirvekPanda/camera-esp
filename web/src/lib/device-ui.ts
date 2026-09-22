@@ -17,6 +17,8 @@ export const KEY_TO_BUTTON: Record<string, number> = {
   " ": Button.Center,
   a: Button.A,
   b: Button.B,
+  A: Button.A, // Caps Lock / Shift
+  B: Button.B,
 };
 
 interface Exports {
