@@ -1,6 +1,6 @@
 {
   "name": "camera-esp",
-  "version": "c54140c",
+  "version": "fb18a98",
   "chip": "ESP32-S3",
   "board": "seeed_xiao_esp32s3",
   "image": "camera-esp.bin",
