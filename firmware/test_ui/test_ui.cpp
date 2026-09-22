@@ -332,70 +332,131 @@ TEST(huge_tick_saturates_instead_of_restarting_animations) {
   CHECK(!ui.animating());
 }
 
+// Opens home tile `page` (0 Camera, 1 Pictures, 2 Settings) from a fresh UI.
+static void openPage(Ui& ui, int page) {
+  for (int i = 0; i < page; i++) ui.press(Button::Right);
+  ui.press(Button::Center);
+  ui.tick(OPEN_MS);
+}
+
+// Moves focus to the Back button (bottom-left on every page) and presses it.
+static void goBack(Ui& ui) {
+  for (int i = 0; i < 12 && ui.focus() != BACK; i++) ui.press(Button::Down);
+  ui.press(Button::Left);  // from the primary action (bottom-right) to Back
+  CHECK_EQ(ui.focus(), BACK);
+  ui.press(Button::Center);
+}
+
 TEST(center_opens_page_after_zoom) {
   Ui ui;
   ui.press(Button::Center);
   CHECK(ui.screen() == Screen::Home);  // still zooming
   ui.tick(OPEN_MS);
   CHECK(ui.screen() == Screen::Camera);
-  ui.press(Button::Up);
-  CHECK(ui.screen() == Screen::Home);
-  CHECK_EQ(ui.focus(), 0);  // back on the tile that was opened
 }
 
-TEST(camera_shutter_adds_photo) {
+TEST(camera_focuses_shoot_and_back_returns_home) {
   Ui ui;
-  ui.press(Button::Center);
-  ui.tick(OPEN_MS);
+  openPage(ui, 0);
+  CHECK_EQ(ui.focus(), PRIMARY);  // the primary action starts focused
   int before = ui.photoCount();
   ui.press(Button::Center);
   CHECK_EQ(ui.photoCount(), before + 1);
   CHECK(ui.animating());  // flash
   ui.tick(FLASH_MS);
   CHECK(!ui.animating());
+  ui.press(Button::Left);
+  CHECK_EQ(ui.focus(), BACK);
+  ui.press(Button::Right);
+  CHECK_EQ(ui.focus(), PRIMARY);
+  ui.press(Button::Left);
+  ui.press(Button::Center);
+  CHECK(ui.screen() == Screen::Home);
+  CHECK_EQ(ui.focus(), 0);  // back on the tile that was opened
 }
 
-TEST(pictures_grid_navigation) {
+TEST(arrows_never_change_settings_or_leave_pages) {
   Ui ui;
-  ui.press(Button::Right);
-  ui.press(Button::Center);
-  ui.tick(OPEN_MS);
+  openPage(ui, 0);
+  bool mirrored = ui.mirrored();
+  int resolution = ui.resolution();
+  for (Button b : {Button::Up, Button::Up, Button::Left, Button::Right, Button::Down}) ui.press(b);
+  CHECK(ui.screen() == Screen::Camera);  // no hidden "Up = home" shortcut
+  CHECK_EQ(ui.mirrored(), mirrored);    // no hidden "Left/Right = flip" shortcut
+  CHECK_EQ(ui.resolution(), resolution);
+}
+
+TEST(pictures_grid_bottom_bar_and_viewer) {
+  Ui ui;
+  openPage(ui, 1);
   CHECK(ui.screen() == Screen::Pictures);
   CHECK_EQ(ui.focus(), 0);
+  ui.press(Button::Up);  // top row: stays, no shortcut home
+  CHECK(ui.screen() == Screen::Pictures);
   ui.press(Button::Right);
   CHECK_EQ(ui.focus(), 1);
   ui.press(Button::Down);  // 3 per row
   CHECK_EQ(ui.focus(), 4);
-  ui.press(Button::Down);  // no photo below: stays
+  ui.press(Button::Down);  // nothing below: the bottom bar
+  CHECK_EQ(ui.focus(), BACK);
+  ui.press(Button::Up);  // back into the grid
   CHECK_EQ(ui.focus(), 4);
-  ui.press(Button::Up);
-  ui.press(Button::Up);  // top row: back home
+  ui.press(Button::Center);  // Center activates the focused photo
+  CHECK(ui.screen() == Screen::Viewer);
+  CHECK_EQ(ui.focus(), BACK);  // the viewer's only control
+  ui.press(Button::Center);
+  CHECK(ui.screen() == Screen::Pictures);
+  CHECK_EQ(ui.focus(), 4);  // same photo still focused
+  goBack(ui);
   CHECK(ui.screen() == Screen::Home);
 }
 
-TEST(settings_change_values) {
+TEST(settings_center_changes_value) {
   Ui ui;
-  ui.press(Button::Right);
-  ui.press(Button::Right);
-  ui.press(Button::Center);
-  ui.tick(OPEN_MS);
+  openPage(ui, 2);
   CHECK(ui.screen() == Screen::Settings);
+  CHECK_EQ(ui.focus(), 0);
   CHECK_EQ(ui.resolution(), RESOLUTION_COUNT - 1);
-  ui.press(Button::Right);  // resolution wraps around
+  ui.press(Button::Center);  // resolution cycles forward and wraps
   CHECK_EQ(ui.resolution(), 0);
-  ui.press(Button::Left);
-  CHECK_EQ(ui.resolution(), RESOLUTION_COUNT - 1);
   ui.press(Button::Down);
-  ui.press(Button::Right);
+  ui.press(Button::Center);
   CHECK(ui.mirrored());
   ui.press(Button::Down);
-  ui.press(Button::Left);
+  ui.press(Button::Center);
   CHECK(ui.vflipped());
   ui.press(Button::Down);
-  ui.press(Button::Down);  // last row: stays
+  ui.press(Button::Down);  // past the last row: the bottom bar
+  CHECK_EQ(ui.focus(), BACK);
+  ui.press(Button::Up);
   CHECK_EQ(ui.focus(), SETTING_COUNT - 1);
-  for (int i = 0; i < SETTING_COUNT; i++) ui.press(Button::Up);
+  goBack(ui);
   CHECK(ui.screen() == Screen::Home);
+}
+
+// The Back button is the same pixels in the same place on every page.
+TEST(back_button_is_identical_on_every_page) {
+  const Rect back = {0, 206, WIDTH / 2, HEIGHT - 206};
+  Ui camera, pictures, settings;
+  openPage(camera, 0);  // Shoot focused: Back unfocused
+  openPage(pictures, 1);
+  openPage(settings, 2);
+  camera.render(fb);
+  pictures.render(fb2);
+  CHECK(sameRegion(fb, fb2, back));
+  settings.render(fb2);
+  CHECK(sameRegion(fb, fb2, back));
+  CHECK(!regionHas(fb, back, color::accent));  // unfocused
+  camera.press(Button::Left);
+  camera.render(fb);
+  CHECK(regionHas(fb, back, color::accent));  // focused: the same blue outline as tiles
+}
+
+TEST(no_hint_text_on_home) {
+  Ui ui;
+  ui.tick(FOCUS_MS);
+  ui.render(fb);
+  CHECK(!regionHas(fb, {0, 206, WIDTH, HEIGHT - 206}, color::text));  // bottom bar: page dots only
 }
 
 TEST(nav_bar_time_and_link_icon) {

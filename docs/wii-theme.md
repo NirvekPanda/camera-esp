@@ -5,6 +5,44 @@ Menu. It has three pages: **Camera**, **Pictures** and **Settings**. The website
 tab that runs the exact same UI code as WebAssembly, on an emulated display that decodes the real
 SPI byte stream. You can build and test the device UI before the display is even wired up.
 
+## 0. Design principles (first priority)
+
+Clean, consistent UI comes before everything else in this theme, features included. Every screen
+and every change is checked against these rules. They come from what Nintendo's designers say
+about the Wii Menu (sources at the end):
+
+| Nintendo, in their words | Rule here |
+|---|---|
+| "The three rows of four Channels are treated equally" | **Equal weight.** One shape and size per kind of element (tile, row, thumbnail, button). No element is dressed up to shout louder than its peers |
+| "Lots of screens, lots of channels, all lined up. This is easy to understand" | **One simple model.** Every screen is the same frame: nav bar, content, bottom bar |
+| "Wii is more about 'experiencing', rather than 'understanding'" | **No explanations on screen.** No hint rows, tips, captions or commentary. If a control needs a sentence to explain it, redesign the control |
+| The Disc Channel is fixed top-left, settings are fixed bottom-left, and a channel opens with **Start** | **Fixed placement.** A control never moves between screens |
+| "Fun for the entire family", so no one "feel[s] left out through not understanding" | **Nothing hidden.** No secret shortcuts. Everything the user can do is visible |
+
+### The rules
+
+1. **One frame.** Every screen has the nav bar on top (clock left, USB/battery right) and the
+   bottom bar below. Pages put **Back bottom-left** and their **primary action bottom-right**
+   (Camera: *Shoot*), in the same size, shape and position on every page, like the Wii's
+   *Wii Menu* / *Start* pair. Home has no Back; its bottom bar holds the page dots.
+2. **One control model.** Arrows *only* move focus, spatially: through the content, then down into
+   the bottom bar and back up. **Center *only* activates** the focused element. There are no other
+   bindings: no "Up goes home", no "Left/Right flips" on some pages.
+3. **One focus style.** A 3 px accent outline on whatever has focus: tiles, rows, thumbnails and
+   buttons alike. Unfocused elements get a 1 px `line` outline.
+4. **Sensible first focus.** A page opens with its most likely action focused: Shoot on Camera,
+   the first row on Settings, the last-viewed photo on Pictures.
+5. **Labels and state only.** On-screen text is limited to names, values and state (`1920x1080`,
+   `Off`, `76%`, a file name). Never instructions or commentary. The same rule applies to the
+   website (see `CLAUDE.md`).
+6. **Calm visuals.** Soft grays, one accent color, lots of whitespace, the same corner radii, and
+   the same easing for every motion.
+
+These rules are enforced by tests (`make uitest`):
+- `back_button_is_identical_on_every_page`: the same pixels in the same place.
+- `arrows_never_change_settings_or_leave_pages`: no hidden bindings.
+- `no_hint_text_on_home`: no instructional text.
+
 ## 1. Research: the original Wii Menu
 
 What defines the look and feel, from the sources below:
@@ -52,10 +90,11 @@ The Wii's pointer and big TV don't fit here. What changes:
   and nothing otherwise.
 - **Home is a row of small rounded squares, one per page** (Camera, Pictures, Settings), instead
   of a 4×3 grid. ← → moves focus. The row **slides with easing** to keep the focused tile centered,
-  and the focused tile grows and gets the blue outline (the Wii hover). Page dots show the
-  position.
-- **Center press** opens the focused page. Every page has a small **home** hint, and **Up** from
-  the page's top row goes back home.
+  and the focused tile grows and gets the blue outline (the Wii hover). Page dots in the bottom bar
+  show the position.
+- **Center** opens the focused page. On every page, **Back** is the bottom-left button. The Pictures
+  grid opens a photo in a **viewer**, whose only control is Back. Settings change with Center, which
+  toggles or cycles the value, because arrows never change values.
 
 ### Palette (RGB888 → RGB565)
 
@@ -79,84 +118,89 @@ The Wii's pointer and big TV don't fit here. What changes:
 
 ## 3. CLI mockups
 
-Each character cell is about 6×12 px of the 240×240 screen (40×20 cells).
+Each character cell is about 6×12 px of the 240×240 screen. `[Back]` is always bottom-left and
+the primary action always bottom-right. `┏━┓` marks the focused element.
 
 **Home** (Pictures focused; the focused tile stays centered and the row slides under it):
 ```
 ┌────────────────────────────────────────┐
-│ 14:23                              ⭘USB│  nav bar: time left, USB/battery right
+│ 14:23                              ⭘USB│  nav bar: clock left, USB/battery right
 ├────────────────────────────────────────┤
-│                                        │
 │                                        │
 │  ╭──────╮   ┏━━━━━━━━┓   ╭──────╮      │  small rounded squares;
 │  │  ◉   │   ┃ ▣▣▣    ┃   │  ⚙   │      │  the focused one is bigger,
-│  │      │   ┃ ▣▣▣    ┃   │      │      │  with a blue outline
+│  │      │   ┃ ▣▣▣    ┃   │      │      │  with the blue outline
 │  ╰──────╯   ┃ ▣▣▣    ┃   ╰──────╯      │
 │              ┗━━━━━━━━┛                │
 │  Camera      Pictures     Settings     │
 │                                        │
-│               ○  ●  ○                  │  page dots
-│                                        │
-│   <  >  move        center  open       │  hint row
+├────────────────────────────────────────┤
+│                ○  ●  ○                 │  bottom bar: page dots (root: no Back)
 └────────────────────────────────────────┘
 ```
-With Camera focused (the start), nothing sits to its left, as on the Wii's first page.
 
 **Camera** (in the emulator, color bars stand in for the sensor):
 ```
 ┌────────────────────────────────────────┐
-│ 14:23  Camera                      ⭘USB│
+│ 14:23  Camera                   76% ▭▯│
 ├────────────────────────────────────────┤
 │╭──────────────────────────────────────╮│
-││                                      ││
 ││            live preview              ││  sensor frame, center-cropped
-││            (240×202)                 ││
 ││                                      ││
-││                                   ◉  ││  shutter hint
+││ 1920x1080                            ││  state, not instructions
 │╰──────────────────────────────────────╯│
-│   ^ home   center shoot   < > flip     │
+├────────────────────────────────────────┤
+│ ( Back )                   ┏ Shoot ┓   │  Shoot focused on open
 └────────────────────────────────────────┘
 ```
 
-**Pictures** (rounded thumbnails; the focused row stays visible):
+**Pictures** (rounded thumbnails; Down past the grid reaches Back):
 ```
 ┌────────────────────────────────────────┐
 │ 14:23  Pictures                    ⭘USB│
 ├────────────────────────────────────────┤
 │  ╭──────╮  ┏━━━━━━┓  ╭──────╮          │
-│  │ img  │  ┃ img  ┃  │ img  │          │  3 per row, 64 px squares,
-│  │      │  ┃      ┃  │      │          │  2 rows visible
+│  │ img  │  ┃ img  ┃  │ img  │          │  3 per row, 64 px squares
 │  ╰──────╯  ┗━━━━━━┛  ╰──────╯          │
 │  ╭──────╮  ╭──────╮                    │
 │  │ img  │  │ img  │                    │
-│  │      │  │      │                    │
 │  ╰──────╯  ╰──────╯                    │
-│  IMG_0002.jpg                          │  focused file name
+├────────────────────────────────────────┤
+│ ( Back )                               │  no primary action: Center opens the photo
 └────────────────────────────────────────┘
 ```
 
-**Settings** (flat rounded rows, ◀ ▶ change the value):
+**Viewer** (the file name is the title; Back is the only control):
+```
+┌────────────────────────────────────────┐
+│ 14:23  IMG_0002.jpg                ⭘USB│
+├────────────────────────────────────────┤
+│  ╭──────────────────────────────────╮  │
+│  │               photo              │  │
+│  ╰──────────────────────────────────╯  │
+├────────────────────────────────────────┤
+│ ┏ Back ┓                               │
+└────────────────────────────────────────┘
+```
+
+**Settings** (flat rounded rows; Center changes the focused value):
 ```
 ┌────────────────────────────────────────┐
 │ 14:23  Settings                    ⭘USB│
 ├────────────────────────────────────────┤
 │ ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓ │
-│ ┃ Resolution          ◀ 1920×1080 ▶  ┃ │  focused row: blue outline
+│ ┃ Resolution               1920x1080 ┃ │
 │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ │
-│ ╭────────────────────────────────────╮ │
-│ │ Mirror                      Off    │ │
-│ ╰────────────────────────────────────╯ │
-│ ╭────────────────────────────────────╮ │
-│ │ Flip vertical               Off    │ │
-│ ╰────────────────────────────────────╯ │
-│ ╭────────────────────────────────────╮ │
-│ │ About                    f4e7d31   │ │
-│ ╰────────────────────────────────────╯ │
+│ │ Mirror                         Off │ │
+│ │ Flip vertical                  Off │ │
+│ │ About                   camera-esp │ │
+├────────────────────────────────────────┤
+│ ( Back )                               │
 └────────────────────────────────────────┘
 ```
 
 `make ui-preview` prints the *real* rendered frames (Home, mid-slide, mid-zoom, Pictures,
-Settings, Camera) in the terminal as truecolor half-block pixels, so these mockups get checked
+Viewer, Settings, Camera with Shoot focused, Camera with Back focused) in the terminal as truecolor half-block pixels, so these mockups get checked
 against the actual code. `OUT=dir make ui-preview` also writes each frame as a 240×240 PPM. Every
 frame goes through the ST7789 driver and emulator, so it's exactly what the panel would show.
 
@@ -201,11 +245,16 @@ frame goes through the ST7789 driver and emulator, so it's exactly what the pane
 |---|---|---|
 | Framebuffer | pixels of rects, rounded corners, clipping, text | `make uitest` (native C++) |
 | Driver ↔ emulator | init sequence; full frame and partial windows round-trip to identical pixels; byte order; `MADCTL` rotation | `make uitest` |
-| UI state | focus movement, wrap, open/back, eased animation end states, status icon (none/USB/battery) | `make uitest` |
+| UI state | focus movement, bottom bar reachable from every page, Center-only activation, viewer, eased animation end states, status icon (none/USB/battery) | `make uitest` |
+| Design rules | Back button pixel-identical on every page; arrows never change values or leave a page; no hint text | `make uitest` |
 | Golden frames | FNV-1a hash of the panel after a scripted input sequence at fixed times | `make uitest` **and** Playwright against the WASM build. Both must equal the same constants: native == WASM, bit for bit |
 | Site tab | Device tab renders a 240×240 canvas, keyboard maps to the 5-way switch, the USB icon appears when the camera is connected | Playwright |
 
 ## Sources
+
+- Nintendo, *Iwata Asks: Wii Channels*: [1. Fun for the Entire Family](https://www.nintendo.com/en-gb/Iwata-Asks/Iwata-Asks-Wii/Iwata-Asks-Wii-Channels/1-Fun-For-the-Entire-Family/1-Fun-For-the-Entire-Family-213500.html), [2. Redefining the Game-User Relationship](https://www.nintendo.com/en-gb/Iwata-Asks/Iwata-Asks-Wii/Iwata-Asks-Wii-Channels/2-Redefining-the-Game-User-Relationship/2-Redefining-the-Game-User-Relationship-213553.html) ([iwataasks.nintendo.com](https://iwataasks.nintendo.com/interviews/wii/wii_channels/0/0/)): channels "treated equally", "lots of screens… all lined up", "experiencing rather than understanding", "fun for the entire family"
+- [Wii Menu (Nintendo UK)](https://www.nintendo.com/en-gb/Wii/Wii-Channels/Wii-Menu/Wii-Menu-749371.html): Disc Channel fixed top-left, settings bottom-left, select a channel then **Start**
+- Switch design analyses: [Designing for the Nintendo Switch](https://medium.com/bpxl-craft/designing-for-the-nintendo-switch-32cacbe4c02d), [Nintendo Switch UI Design](https://medium.com/@dli_li/nintendo-switch-ui-design-1eb1742515db), [Nintendo & designing humanly](https://uxdesign.cc/nintendo-designing-humanly-984626b64892): consistency across the whole system, clear hierarchy, recognizable icons
 
 - [Wii system software (Wikipedia)](https://en.wikipedia.org/wiki/Wii_system_software): Wii Menu 4×3 grid, 4 pages, plus/minus paging, time and date on every page
 - [Wii Menu (HandWiki)](https://handwiki.org/wiki/Wii_Menu), [Wii Menu (Wii Wiki)](https://wii.fandom.com/wiki/Wii_Menu)

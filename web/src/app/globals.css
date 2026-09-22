@@ -444,10 +444,3 @@ main {
 .dpad-center { grid-area: 2 / 2; border-radius: 50%; }
 .dpad-right { grid-area: 2 / 3; }
 .dpad-down { grid-area: 3 / 2; }
-
-.device-note {
-  margin-top: 12px;
-  max-width: 60ch;
-  font-size: 0.85rem;
-  color: var(--muted);
-}

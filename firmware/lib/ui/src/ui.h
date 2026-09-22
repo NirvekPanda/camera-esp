@@ -7,7 +7,7 @@
 namespace ui {
 
 enum class Button : uint8_t { Up, Down, Left, Right, Center };  // the 5-way switch
-enum class Screen : uint8_t { Home, Camera, Pictures, Settings };
+enum class Screen : uint8_t { Home, Camera, Pictures, Settings, Viewer };
 enum class Link : uint8_t { None, Usb, Battery };  // nav bar top-right icon
 
 constexpr int PAGE_COUNT = 3;          // Camera, Pictures, Settings
@@ -18,8 +18,15 @@ constexpr int SETTING_COUNT = 4;       // Resolution, Mirror, Flip vertical, Abo
 constexpr int RESOLUTION_COUNT = 9;    // matches RESOLUTIONS in web/src/lib/camera/settings.ts
 constexpr int MAX_PHOTOS = 99;
 
+// focus() values for the bottom bar, which is in the same place on every page:
+// Back bottom-left, the page's primary action (if any) bottom-right.
+constexpr int BACK = -1;
+constexpr int PRIMARY = -2;
+
 // The whole device UI: 5-way input + time in, frames out. Deterministic: the same presses and
 // ticks give the same pixels on the device and in the WASM build.
+// One control model everywhere (docs/wii-theme.md): arrows only move focus, Center only activates
+// the focused element, and every page has the same nav bar and bottom bar.
 class Ui {
  public:
   void press(Button b);
@@ -33,7 +40,7 @@ class Ui {
   }
 
   Screen screen() const { return screen_; }
-  int focus() const;  // focused tile / photo / setting on the current screen
+  int focus() const;  // focused tile / photo / setting, or BACK / PRIMARY
   bool animating() const { return focusT_ < FOCUS_MS || openT_ < OPEN_MS || flashT_ < FLASH_MS; }
   int photoCount() const { return photos_; }
   int resolution() const { return resolution_; }  // index into RESOLUTIONS
@@ -42,11 +49,16 @@ class Ui {
 
  private:
   void renderNavBar(Framebuffer& fb, const char* title) const;
+  void renderBottomBar(Framebuffer& fb, int focus, const char* primary) const;
   void renderHome(Framebuffer& fb) const;
   void renderCamera(Framebuffer& fb) const;
   void renderPictures(Framebuffer& fb) const;
   void renderSettings(Framebuffer& fb) const;
-  void changeSetting(int delta);
+  void renderViewer(Framebuffer& fb) const;
+  void pressHome(Button b);
+  void pressPage(Button b);
+  void activate();
+  void open(Screen page);
 
   Screen screen_ = Screen::Home;
   int minutes_ = 0;
@@ -60,7 +72,8 @@ class Ui {
   uint32_t openT_ = OPEN_MS;
 
   uint32_t flashT_ = FLASH_MS;
-  int photos_ = 5, photoFocus_ = 0;
+  int cameraFocus_ = PRIMARY;
+  int photos_ = 5, photoFocus_ = 0;  // stays on the viewed photo while the viewer is open
   int settingFocus_ = 0, resolution_ = RESOLUTION_COUNT - 1;  // 1920x1080, the site's default
   bool mirrored_ = false, vflipped_ = false;
 };

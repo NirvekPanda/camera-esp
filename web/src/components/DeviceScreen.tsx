@@ -89,7 +89,7 @@ export function DeviceScreen() {
           width={PANEL_SIZE}
           height={PANEL_SIZE}
           tabIndex={0}
-          aria-label="Device screen, 240 by 240. Focus it and use the arrow keys and Enter."
+          aria-label="Device screen"
           onKeyDown={onKeyDown}
         />
         <div className="dpad" role="group" aria-label="5-way switch">
@@ -100,10 +100,6 @@ export function DeviceScreen() {
           ))}
         </div>
       </div>
-      <p className="device-note">
-        The device&apos;s own UI code, compiled to WebAssembly. Every frame goes through the ST7789 display
-        driver into an emulated panel, so this is exactly what the camera&apos;s screen shows.
-      </p>
       {error && (
         <p className="error" role="alert">
           {error}

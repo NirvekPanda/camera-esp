@@ -62,8 +62,10 @@ test("arrow keys and Enter drive the 5-way switch", async ({ page }) => {
   await page.keyboard.press("ArrowRight"); // focus Pictures (input isn't blocked while the row slides)
   await page.keyboard.press("Enter"); // open it
   await expect.poll(() => pixel(page, 22, 48)).toEqual(FIRST_THUMB);
-  await page.keyboard.press("ArrowUp"); // top row: back home
-  await expect.poll(() => pixel(page, 22, 48)).not.toEqual(FIRST_THUMB);
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown"); // below the grid: Back, bottom-left as on every page
+  await page.keyboard.press("Enter");
+  await expect.poll(() => pixel(page, 22, 48)).not.toEqual(FIRST_THUMB); // home again
 });
 
 test("the on-screen pad works like the keys", async ({ page }) => {

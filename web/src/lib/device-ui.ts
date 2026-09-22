@@ -5,7 +5,7 @@ export const PANEL_SIZE = 240;
 
 // Must match ui::Button, ui::Screen and ui::Link in firmware/lib/ui/src/ui.h.
 export const Button = { Up: 0, Down: 1, Left: 2, Right: 3, Center: 4 } as const;
-export const Screen = { Home: 0, Camera: 1, Pictures: 2, Settings: 3 } as const;
+export const Screen = { Home: 0, Camera: 1, Pictures: 2, Settings: 3, Viewer: 4 } as const;
 export const Link = { None: 0, Usb: 1, Battery: 2 } as const;
 
 export const KEY_TO_BUTTON: Record<string, number> = {

@@ -3,18 +3,24 @@
 namespace ui {
 namespace {
 
-constexpr int BAR_H = 27;  // nav bar; its divider is the row below
-constexpr Rect CONTENT = {0, BAR_H + 1, WIDTH, HEIGHT - BAR_H - 1};
-constexpr int HINT_Y = 218;
+// Every screen has the same frame: nav bar on top, bottom bar below, content in between.
+constexpr int BAR_H = 27;       // nav bar; its divider is the row below
+constexpr int BOTTOM_Y = 206;   // bottom bar; its divider is the row above
+constexpr Rect CONTENT = {0, BAR_H + 1, WIDTH, BOTTOM_Y - BAR_H - 2};
+// Bottom bar buttons: Back always bottom-left, the primary action always bottom-right.
+constexpr Rect BACK_BUTTON = {8, BOTTOM_Y + 5, 76, 24};
+constexpr Rect PRIMARY_BUTTON = {WIDTH - 8 - 76, BOTTOM_Y + 5, 76, 24};
+constexpr int FOCUS_STROKE = 3;  // the one focus style: a blue outline, on every focusable element
 
 // Home row
 constexpr int TILE = 56, TILE_FOCUSED = 64, TILE_PITCH = 76, ROW_Y = 104, TILE_RADIUS = 14;
 // Pictures grid: 3 per row, 2 rows visible
 constexpr int COLS = 3, THUMB = 64, THUMB_PITCH = 74, GRID_X = 12, GRID_Y = 38;
 // Settings rows
-constexpr int ROW_H = 40, ROW_PITCH = 46, ROWS_Y = 36;
+constexpr int ROW_H = 34, ROW_PITCH = 40, ROWS_Y = 36;
 
 const char* const PAGE_NAMES[PAGE_COUNT] = {"Camera", "Pictures", "Settings"};
+const char* const SETTING_LABELS[SETTING_COUNT] = {"Resolution", "Mirror", "Flip vertical", "About"};
 const char* const RESOLUTIONS[RESOLUTION_COUNT] = {
     "240x240", "480x480", "720x720", "320x240", "640x480",
     "800x600", "1280x720", "1600x1200", "1920x1080"};
@@ -82,8 +88,21 @@ void drawBattery(Framebuffer& fb, int right, int cy, int percent) {
   fb.drawText(fonts::small, body.x - 4 - Framebuffer::textWidth(fonts::small, label), cy - fonts::small.height / 2, label, color::text);
 }
 
-void drawHint(Framebuffer& fb, const char* text) {
-  fb.drawText(fonts::small, (WIDTH - Framebuffer::textWidth(fonts::small, text)) / 2, HINT_Y, text, color::text);
+// Outline shared by every focusable element (tiles, rows, thumbnails, bottom buttons).
+void outline(Framebuffer& fb, Rect r, int radius, bool focused) {
+  fb.strokeRoundRect(r, radius, focused ? FOCUS_STROKE : 1, focused ? color::accent : color::line);
+}
+
+void photoPlaceholder(Framebuffer& fb, Rect r, int index) {  // a sun over a hill
+  fb.fillRoundRect(r, r.w / 6, THUMB_COLORS[index % 5]);
+  fb.fillCircle(r.x + r.w * 72 / 100, r.y + r.h * 28 / 100, r.w / 9, color::tile);
+  fb.fillRoundRect({r.x + r.w / 10, r.y + r.h * 6 / 10, r.w * 8 / 10, r.h * 3 / 10}, r.h / 8, color::tile);
+}
+
+void photoName(char (&name)[13], int index) {
+  const char base[] = "IMG_0000.jpg";
+  for (int i = 0; i < 13; i++) name[i] = base[i];
+  twoDigits(name + 6, (index + 1) % 100);
 }
 
 }  // namespace
@@ -96,57 +115,92 @@ int easeOut(uint32_t elapsed, uint32_t duration) {
 
 int Ui::focus() const {
   switch (screen_) {
+    case Screen::Camera: return cameraFocus_;
     case Screen::Pictures: return photoFocus_;
     case Screen::Settings: return settingFocus_;
-    case Screen::Camera: return 0;
+    case Screen::Viewer: return BACK;
     default: return homeFocus_;
   }
 }
 
 void Ui::press(Button b) {
   if (openT_ < OPEN_MS) return;  // ignore input while a page is opening
+  if (screen_ == Screen::Home) return pressHome(b);
+  if (b == Button::Center) return activate();
+  pressPage(b);
+}
+
+void Ui::pressHome(Button b) {
+  if ((b == Button::Left && homeFocus_ > 0) || (b == Button::Right && homeFocus_ < PAGE_COUNT - 1)) {
+    focusFrom_ = homeFocus_;
+    homeFocus_ += b == Button::Right ? 1 : -1;
+    focusT_ = 0;
+  } else if (b == Button::Center) {
+    opening_ = Screen(homeFocus_ + 1);
+    openT_ = 0;
+  }
+}
+
+// Arrows move focus spatially: through the page's content, then down into the bottom bar
+// (Back left, primary right) and back up. They never change a value or leave the page.
+void Ui::pressPage(Button b) {
   switch (screen_) {
-    case Screen::Home:
-      if ((b == Button::Left && homeFocus_ > 0) || (b == Button::Right && homeFocus_ < PAGE_COUNT - 1)) {
-        focusFrom_ = homeFocus_;
-        homeFocus_ += b == Button::Right ? 1 : -1;
-        focusT_ = 0;
-      } else if (b == Button::Center) {
-        opening_ = Screen(homeFocus_ + 1);
-        openT_ = 0;
+    case Screen::Camera:  // no focusable content: only the bottom bar
+      if (b == Button::Left) cameraFocus_ = BACK;
+      if (b == Button::Right) cameraFocus_ = PRIMARY;
+      return;
+    case Screen::Pictures:
+      if (photoFocus_ == BACK) {
+        if (b == Button::Up && photos_ > 0) photoFocus_ = photos_ - 1;
+      } else if (b == Button::Left && photoFocus_ % COLS > 0) {
+        photoFocus_--;
+      } else if (b == Button::Right && photoFocus_ % COLS < COLS - 1 && photoFocus_ + 1 < photos_) {
+        photoFocus_++;
+      } else if (b == Button::Down) {
+        photoFocus_ = photoFocus_ + COLS < photos_ ? photoFocus_ + COLS : BACK;
+      } else if (b == Button::Up && photoFocus_ >= COLS) {
+        photoFocus_ -= COLS;
       }
       return;
-    case Screen::Camera:
-      if (b == Button::Up) screen_ = Screen::Home;
-      else if (b == Button::Center && photos_ < MAX_PHOTOS) {
-        photos_++;
-        flashT_ = 0;
-      } else if (b == Button::Left || b == Button::Right) mirrored_ = !mirrored_;
-      else if (b == Button::Down) resolution_ = (resolution_ + 1) % RESOLUTION_COUNT;
-      return;
-    case Screen::Pictures: {
-      int next = photoFocus_;
-      if (b == Button::Left && photoFocus_ % COLS > 0) next--;
-      if (b == Button::Right && photoFocus_ % COLS < COLS - 1) next++;
-      if (b == Button::Down) next += COLS;
-      if (b == Button::Up && photoFocus_ < COLS) screen_ = Screen::Home;
-      else if (b == Button::Up) next -= COLS;
-      if (next < photos_) photoFocus_ = next;
-      return;
-    }
     case Screen::Settings:
-      if (b == Button::Up && settingFocus_ == 0) screen_ = Screen::Home;
-      else if (b == Button::Up) settingFocus_--;
-      else if (b == Button::Down && settingFocus_ < SETTING_COUNT - 1) settingFocus_++;
-      else if (b == Button::Left || b == Button::Right) changeSetting(b == Button::Right ? 1 : -1);
+      if (b == Button::Down) settingFocus_ = settingFocus_ == BACK || settingFocus_ == SETTING_COUNT - 1 ? BACK : settingFocus_ + 1;
+      if (b == Button::Up) settingFocus_ = settingFocus_ == BACK ? SETTING_COUNT - 1 : settingFocus_ > 0 ? settingFocus_ - 1 : 0;
+      return;
+    default:  // Viewer: Back is the only control
       return;
   }
 }
 
-void Ui::changeSetting(int delta) {
-  if (settingFocus_ == 0) resolution_ = (resolution_ + delta + RESOLUTION_COUNT) % RESOLUTION_COUNT;
-  if (settingFocus_ == 1) mirrored_ = !mirrored_;
-  if (settingFocus_ == 2) vflipped_ = !vflipped_;
+// Center activates whatever is focused, on every page.
+void Ui::activate() {
+  if (focus() == BACK) {
+    screen_ = screen_ == Screen::Viewer ? Screen::Pictures : Screen::Home;
+    return;
+  }
+  switch (screen_) {
+    case Screen::Camera:  // PRIMARY: Shoot
+      if (photos_ < MAX_PHOTOS) photos_++;
+      flashT_ = 0;
+      return;
+    case Screen::Pictures:
+      screen_ = Screen::Viewer;
+      return;
+    case Screen::Settings:
+      if (settingFocus_ == 0) resolution_ = (resolution_ + 1) % RESOLUTION_COUNT;
+      if (settingFocus_ == 1) mirrored_ = !mirrored_;
+      if (settingFocus_ == 2) vflipped_ = !vflipped_;
+      return;
+    default:
+      return;
+  }
+}
+
+// Each page opens with its most likely action focused.
+void Ui::open(Screen page) {
+  screen_ = page;
+  if (page == Screen::Camera) cameraFocus_ = PRIMARY;
+  if (page == Screen::Settings) settingFocus_ = 0;
+  if (page == Screen::Pictures && photoFocus_ == BACK) photoFocus_ = 0;
 }
 
 void Ui::tick(uint32_t ms) {
@@ -154,7 +208,7 @@ void Ui::tick(uint32_t ms) {
   flashT_ = advance(flashT_, ms, FLASH_MS);
   if (openT_ < OPEN_MS) {
     openT_ = advance(openT_, ms, OPEN_MS);
-    if (openT_ == OPEN_MS) screen_ = opening_;
+    if (openT_ == OPEN_MS) open(opening_);
   }
 }
 
@@ -165,8 +219,37 @@ void Ui::render(Framebuffer& fb) const {
     case Screen::Camera: renderCamera(fb); break;
     case Screen::Pictures: renderPictures(fb); break;
     case Screen::Settings: renderSettings(fb); break;
+    case Screen::Viewer: renderViewer(fb); break;
   }
-  renderNavBar(fb, screen_ == Screen::Home ? nullptr : PAGE_NAMES[int(screen_) - 1]);
+  char name[13];
+  photoName(name, photoFocus_);
+  const char* title = screen_ == Screen::Home ? nullptr : screen_ == Screen::Viewer ? name : PAGE_NAMES[int(screen_) - 1];
+  renderNavBar(fb, title);
+  switch (screen_) {
+    case Screen::Camera: return renderBottomBar(fb, cameraFocus_, "Shoot");
+    case Screen::Pictures: return renderBottomBar(fb, photoFocus_, nullptr);
+    case Screen::Settings: return renderBottomBar(fb, settingFocus_, nullptr);
+    case Screen::Viewer: return renderBottomBar(fb, BACK, nullptr);
+    default: return renderBottomBar(fb, 0, nullptr);  // Home: the page dots live in the bar
+  }
+}
+
+void Ui::renderBottomBar(Framebuffer& fb, int focus, const char* primary) const {
+  fb.fillRect({0, BOTTOM_Y, WIDTH, HEIGHT - BOTTOM_Y}, color::bar);
+  fb.fillRect({0, BOTTOM_Y - 1, WIDTH, 1}, color::line);
+  auto button = [&](Rect r, const char* label, bool focused) {
+    fb.fillRoundRect(r, r.h / 2, color::tile);
+    outline(fb, r, r.h / 2, focused);
+    int w = Framebuffer::textWidth(fonts::small, label);
+    fb.drawText(fonts::small, r.x + (r.w - w) / 2, r.y + (r.h - fonts::small.height) / 2, label, color::ink);
+  };
+  if (screen_ == Screen::Home) {
+    for (int i = 0; i < PAGE_COUNT; i++)
+      fb.fillCircle(WIDTH / 2 + (i - 1) * 14, BOTTOM_Y + (HEIGHT - BOTTOM_Y) / 2, 3, i == homeFocus_ ? color::accent : color::line);
+    return;
+  }
+  button(BACK_BUTTON, "Back", focus == BACK);
+  if (primary) button(PRIMARY_BUTTON, primary, focus == PRIMARY);
 }
 
 void Ui::renderNavBar(Framebuffer& fb, const char* title) const {
@@ -191,26 +274,24 @@ void Ui::renderHome(Framebuffer& fb) const {
     Rect r = {cx - size / 2, ROW_Y - size / 2, size, size};
     fb.fillRoundRect(r, TILE_RADIUS, color::tile);
     bool focused = distance < 512;
-    fb.strokeRoundRect(r, TILE_RADIUS, focused ? 3 : 1, focused ? color::accent : color::line);
+    outline(fb, r, TILE_RADIUS, focused);
     drawIcon(fb, i, cx, ROW_Y);
     const char* name = PAGE_NAMES[i];
     fb.drawText(fonts::small, cx - Framebuffer::textWidth(fonts::small, name) / 2, ROW_Y + TILE_FOCUSED / 2 + 6, name, focused ? color::ink : color::text);
   }
-  for (int i = 0; i < PAGE_COUNT; i++) fb.fillCircle(WIDTH / 2 + (i - 1) * 14, 190, 3, i == homeFocus_ ? color::accent : color::line);
-  drawHint(fb, "<  >  move        center  open");
 
   if (openT_ < OPEN_MS) {  // the focused tile zooms out to fill the page, like opening a channel
     int t = easeOut(openT_, OPEN_MS);
     Rect from = {WIDTH / 2 - TILE_FOCUSED / 2, ROW_Y - TILE_FOCUSED / 2, TILE_FOCUSED, TILE_FOCUSED};
     Rect r = {lerp(from.x, CONTENT.x, t), lerp(from.y, CONTENT.y, t), lerp(from.w, CONTENT.w, t), lerp(from.h, CONTENT.h, t)};
     fb.fillRoundRect(r, TILE_RADIUS, color::tile);
-    fb.strokeRoundRect(r, TILE_RADIUS, 3, color::accent);
+    outline(fb, r, TILE_RADIUS, true);
   }
 }
 
 void Ui::renderCamera(Framebuffer& fb) const {
   // No sensor in the emulator: color bars stand in for the preview, flipped like the real one.
-  const Rect view = {6, 34, WIDTH - 12, 172};
+  const Rect view = {6, CONTENT.y + 6, WIDTH - 12, CONTENT.h - 12};
   const int bars = sizeof BARS / sizeof BARS[0], split = view.h * 7 / 10;
   for (int i = 0; i < bars; i++) {
     int k = mirrored_ ? bars - 1 - i : i;  // bar edges from the view width: no rounding overflow
@@ -221,43 +302,36 @@ void Ui::renderCamera(Framebuffer& fb) const {
   if (flashT_ < FLASH_MS) fb.fillRect(view, color::white);
   fb.maskRoundRect(view, 12, color::bg);
   fb.drawText(fonts::small, view.x + 8, view.y + view.h - 22, RESOLUTIONS[resolution_], color::white);
-  fb.fillCircle(view.x + view.w - 18, view.y + view.h - 16, 9, color::white);
-  fb.fillCircle(view.x + view.w - 18, view.y + view.h - 16, 6, LOW_BATTERY);
-  drawHint(fb, "^ home   center shoot   < > flip");
 }
 
 void Ui::renderPictures(Framebuffer& fb) const {
-  int top = photoFocus_ / COLS > 0 ? photoFocus_ / COLS - 1 : 0;  // keep the focused row visible
+  int row = photoFocus_ == BACK ? (photos_ - 1) / COLS : photoFocus_ / COLS;
+  int top = row > 0 ? row - 1 : 0;  // keep the focused row visible
   for (int i = top * COLS; i < photos_ && i < (top + 2) * COLS; i++) {
     Rect r = {GRID_X + (i % COLS) * THUMB_PITCH, GRID_Y + (i / COLS - top) * THUMB_PITCH, THUMB, THUMB};
-    fb.fillRoundRect(r, 10, THUMB_COLORS[i % 5]);
-    fb.fillCircle(r.x + 46, r.y + 18, 7, color::tile);  // a sun over a hill, as a stand-in thumbnail
-    fb.fillRoundRect({r.x + 6, r.y + 38, 52, 20}, 8, color::tile);
-    fb.strokeRoundRect(r, 10, i == photoFocus_ ? 3 : 1, i == photoFocus_ ? color::accent : color::line);
+    photoPlaceholder(fb, r, i);
+    outline(fb, r, 10, i == photoFocus_);
   }
-  char name[] = "IMG_0000.jpg";
-  twoDigits(name + 6, (photoFocus_ + 1) % 100);
-  fb.drawText(fonts::small, GRID_X, GRID_Y + 2 * THUMB_PITCH + 4, name, color::ink);
 }
 
 void Ui::renderSettings(Framebuffer& fb) const {
-  const char* const labels[SETTING_COUNT] = {"Resolution", "Mirror", "Flip vertical", "About"};
   const char* const values[SETTING_COUNT] = {RESOLUTIONS[resolution_], mirrored_ ? "On" : "Off", vflipped_ ? "On" : "Off", "camera-esp"};
   for (int i = 0; i < SETTING_COUNT; i++) {
     Rect r = {8, ROWS_Y + i * ROW_PITCH, WIDTH - 16, ROW_H};
     bool focused = i == settingFocus_;
     fb.fillRoundRect(r, 12, color::tile);
-    fb.strokeRoundRect(r, 12, focused ? 3 : 1, focused ? color::accent : color::line);
+    outline(fb, r, 12, focused);
     int textY = r.y + (ROW_H - fonts::small.height) / 2;
-    fb.drawText(fonts::small, r.x + 12, textY, labels[i], color::ink);
+    fb.drawText(fonts::small, r.x + 12, textY, SETTING_LABELS[i], color::ink);
     int valueW = Framebuffer::textWidth(fonts::small, values[i]);
-    int valueX = r.x + r.w - 14 - valueW - (focused && i < 3 ? 14 : 0);
-    fb.drawText(fonts::small, valueX, textY, values[i], focused ? color::accent : color::text);
-    if (focused && i < 3) {  // changeable: show the arrows
-      fb.drawText(fonts::small, valueX - 12, textY, "<", color::accent);
-      fb.drawText(fonts::small, r.x + r.w - 20, textY, ">", color::accent);
-    }
+    fb.drawText(fonts::small, r.x + r.w - 12 - valueW, textY, values[i], focused ? color::accent : color::text);
   }
+}
+
+void Ui::renderViewer(Framebuffer& fb) const {
+  const Rect photo = {CONTENT.x + 12, CONTENT.y + 10, CONTENT.w - 24, CONTENT.h - 20};
+  photoPlaceholder(fb, photo, photoFocus_);
+  outline(fb, photo, photo.w / 6, false);
 }
 
 }  // namespace ui

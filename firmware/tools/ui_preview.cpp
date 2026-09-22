@@ -56,37 +56,44 @@ void show(Ui& device, const char* name, const char* title) {
   if (const char* dir = getenv("OUT")) writePpm(dir, name, px);
 }
 
-void open(Ui& device, int page) {
-  while (device.screen() != Screen::Home) device.press(Button::Up);
-  while (device.focus() < page) device.press(Button::Right), device.tick(FOCUS_MS);
-  while (device.focus() > page) device.press(Button::Left), device.tick(FOCUS_MS);
+// A fresh device on home tile `page`, opened (0 Camera, 1 Pictures, 2 Settings).
+Ui opened(int page, Link link, int battery = 0) {
+  Ui device;
+  device.setTime(14 * 60 + 23);
+  device.setLink(link, battery);
+  for (int i = 0; i < page; i++) device.press(Button::Right);
+  device.tick(FOCUS_MS);
   device.press(Button::Center);
   device.tick(OPEN_MS);
+  return device;
 }
 
 }  // namespace
 
 int main() {
   st7789::init(panel);
-  Ui device;
-  device.setTime(14 * 60 + 23);
-  device.setLink(Link::Usb);
+  Ui home;
+  home.setTime(14 * 60 + 23);
+  home.setLink(Link::Usb);
+  show(home, "home", "Home (USB connected)");
+  home.press(Button::Right);
+  home.tick(FOCUS_MS / 2);
+  show(home, "home-sliding", "Home, sliding to Pictures (mid-animation)");
+  home.tick(FOCUS_MS);
+  home.press(Button::Center);
+  home.tick(OPEN_MS / 2);
+  show(home, "opening", "Opening Pictures (mid-zoom)");
 
-  show(device, "home", "Home (USB connected)");
-  device.press(Button::Right);
-  device.tick(FOCUS_MS / 2);
-  show(device, "home-sliding", "Home, sliding to Pictures (mid-animation)");
-  device.tick(FOCUS_MS);
-  device.press(Button::Center);
-  device.tick(OPEN_MS / 2);
-  show(device, "opening", "Opening Pictures (mid-zoom)");
-  device.tick(OPEN_MS);
-  device.press(Button::Right);
-  show(device, "pictures", "Pictures");
-  open(device, 2);
-  show(device, "settings", "Settings");
-  device.setLink(Link::Battery, 76);
-  open(device, 0);
-  show(device, "camera", "Camera (battery 76%)");
+  Ui pictures = opened(1, Link::Usb);
+  pictures.press(Button::Right);
+  show(pictures, "pictures", "Pictures");
+  pictures.press(Button::Center);
+  show(pictures, "viewer", "Viewer (Back focused: its only control)");
+  Ui settings = opened(2, Link::Usb);
+  show(settings, "settings", "Settings");
+  Ui camera = opened(0, Link::Battery, 76);
+  show(camera, "camera", "Camera (Shoot focused, battery 76%)");
+  camera.press(Button::Left);
+  show(camera, "camera-back", "Camera (Back focused)");
   return 0;
 }

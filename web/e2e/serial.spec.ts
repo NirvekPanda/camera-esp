@@ -154,9 +154,7 @@ test("tells the user to reflash when the board runs older firmware", async ({ pa
     window.fakeCamera.oldFirmware = true;
   });
   await page.getByRole("button", { name: "Connect" }).click();
-  await expect(errorBanner(page)).toHaveText(
-    "Camera firmware is out of date (Unknown command 0x89). Reflash it: make flash",
-  );
+  await expect(errorBanner(page)).toHaveText("Camera firmware is out of date");
   await expect(page.getByRole("status")).toHaveText("disconnected");
 });
 
@@ -165,8 +163,6 @@ test("explains a board without camera firmware", async ({ page }) => {
     window.fakeCamera.silent = true;
   });
   await page.getByRole("button", { name: "Connect" }).click();
-  await expect(errorBanner(page)).toHaveText(/Camera didn't respond\. Is the camera firmware flashed\?/, {
-    timeout: 8000,
-  });
+  await expect(errorBanner(page)).toHaveText("No camera firmware detected", { timeout: 8000 });
   await expect(page.getByRole("status")).toHaveText("disconnected");
 });

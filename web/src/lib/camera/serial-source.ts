@@ -9,8 +9,8 @@ export const USB_FILTERS: SerialPortFilter[] = [{ usbVendorId: 0x303a }, { usbVe
 
 const REQUEST_TIMEOUT_MS = 5000;
 const FILE_TIMEOUT_MS = 30000;
-const NO_REPLY = "Camera stopped responding. Reconnect it (unplug and replug if that fails).";
-const NO_FIRMWARE = "Camera didn't respond. Is the camera firmware flashed? (make flash)";
+const NO_REPLY = "Camera stopped responding";
+const NO_FIRMWARE = "No camera firmware detected";
 
 interface Waiter {
   expect: number;
@@ -31,11 +31,7 @@ const localEpochSeconds = () => Math.floor(Date.now() / 1000) - new Date().getTi
 
 // Firmware older than the site answers new commands with "Unknown command 0x..".
 const deviceError = (message: string) =>
-  new Error(
-    message.startsWith("Unknown command")
-      ? `Camera firmware is out of date (${message}). Reflash it: make flash`
-      : message,
-  );
+  new Error(message.startsWith("Unknown command") ? "Camera firmware is out of date" : message);
 
 /** The real camera over USB (WebSerial). Chrome/Edge only. */
 export class SerialSource implements CameraSource {
@@ -54,7 +50,7 @@ export class SerialSource implements CameraSource {
   private failure: Error | null = null;
 
   async connect() {
-    if (!("serial" in navigator)) throw new Error("This browser has no WebSerial. Use Chrome or Edge.");
+    if (!("serial" in navigator)) throw new Error("WebSerial isn't supported in this browser");
     const port = await navigator.serial.requestPort({ filters: USB_FILTERS });
     await port.open({ baudRate: 115200, bufferSize: 1 << 16 }); // USB CDC ignores the baud rate
     if (!port.readable || !port.writable) throw new Error("Serial port isn't readable/writable");
