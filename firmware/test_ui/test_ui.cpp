@@ -374,6 +374,56 @@ TEST(camera_center_shoots_a_toggles_flash_b_goes_back) {
   CHECK_EQ(ui.focus(), 0);  // back on the Camera tile
 }
 
+TEST(camera_shows_the_live_preview_when_one_is_set) {
+  Ui ui;
+  openPage(ui, 0);
+  static uint16_t frame[PREVIEW_W * PREVIEW_H];
+  for (int i = 0; i < PREVIEW_W * PREVIEW_H; i++) frame[i] = uint16_t(0x1234 + i % 97);
+  ui.setPreview(frame);
+  ui.render(fb);
+  bool exact = true;
+  for (int y = 0; y < PREVIEW_H; y++)
+    for (int x = 0; x < PREVIEW_W; x++) exact &= fb.at(x, PREVIEW_Y + y) == frame[y * PREVIEW_W + x];
+  CHECK(exact);                            // the frame, pixel for pixel, under the nav bar
+  CHECK_EQ(fb.at(120, 27), color::line);  // nav bar unchanged
+  ui.setPreview(nullptr);
+  ui.render(fb);
+  CHECK_EQ(fb.at(5, 60), color::white);  // back to the color bars (no camera)
+}
+
+TEST(leaving_the_camera_drops_the_preview) {
+  Ui ui;
+  openPage(ui, 0);
+  static uint16_t frame[PREVIEW_W * PREVIEW_H];
+  for (auto& p : frame) p = 0x07e0;
+  ui.setPreview(frame);
+  ui.press(Button::B);  // home
+  ui.press(Button::Center);
+  ui.tick(OPEN_MS);
+  ui.render(fb);
+  CHECK_EQ(fb.at(5, 60), color::white);  // color bars until a fresh frame arrives, not a stale one
+}
+
+TEST(mirror_and_flip_apply_to_the_live_preview) {
+  Ui ui;
+  static uint16_t frame[PREVIEW_W * PREVIEW_H];
+  for (int i = 0; i < PREVIEW_W * PREVIEW_H; i++) frame[i] = uint16_t(i % 7919);
+  openPage(ui, 2);  // Settings: Mirror and Flip vertical on
+  ui.press(Button::Down);
+  ui.press(Button::Center);
+  ui.press(Button::Down);
+  ui.press(Button::Center);
+  ui.press(Button::B);
+  ui.press(Button::Left);
+  ui.press(Button::Left);
+  ui.press(Button::Center);
+  ui.tick(OPEN_MS);
+  ui.setPreview(frame);
+  ui.render(fb);
+  CHECK_EQ(fb.at(0, PREVIEW_Y), frame[PREVIEW_W * PREVIEW_H - 1]);  // top-left shows the bottom-right
+  CHECK_EQ(fb.at(PREVIEW_W - 1, HEIGHT - 1), frame[0]);
+}
+
 TEST(camera_title_is_an_icon_not_a_label) {
   Ui camera, settings;
   openPage(camera, 0);

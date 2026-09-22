@@ -2,13 +2,18 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useCamera } from "@/context/camera-context";
+import { coverCrop } from "@/lib/camera/settings";
 import {
   Button,
   KEY_TO_BUTTON,
   Link,
   PANEL_SIZE,
+  PREVIEW_H,
+  PREVIEW_W,
+  Screen,
   createDeviceUi,
   rgb565ToRgba,
+  rgbaToRgb565,
   type DeviceUi,
 } from "@/lib/device-ui";
 
@@ -77,6 +82,26 @@ export function DeviceScreen() {
       uiRef.current = null;
     };
   }, []);
+
+  // Live preview: frames from the connected camera feed the device's Camera app.
+  useEffect(() => {
+    if (!source) return;
+    const ctx = new OffscreenCanvas(PREVIEW_W, PREVIEW_H).getContext("2d", { willReadFrequently: true });
+    if (!ctx) return;
+    const rgb565 = new Uint16Array(PREVIEW_W * PREVIEW_H);
+    const unsubscribe = source.onFrame((frame) => {
+      const ui = uiRef.current;
+      if (ui?.screen() !== Screen.Camera) return; // only convert frames that will be seen
+      const { sx, sy, sw, sh } = coverCrop(frame.width, frame.height, PREVIEW_W, PREVIEW_H);
+      ctx.drawImage(frame, sx, sy, sw, sh, 0, 0, PREVIEW_W, PREVIEW_H);
+      rgbaToRgb565(ctx.getImageData(0, 0, PREVIEW_W, PREVIEW_H).data, rgb565);
+      ui.setPreview(rgb565);
+    });
+    return () => {
+      unsubscribe();
+      uiRef.current?.setPreview(null); // back to the color bars
+    };
+  }, [source]);
 
   const press = (button: number) => uiRef.current?.press(button);
 

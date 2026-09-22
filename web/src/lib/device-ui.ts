@@ -2,6 +2,10 @@
 // an emulated ST7789 fed by the real driver's SPI bytes: this is what the physical panel shows.
 
 export const PANEL_SIZE = 240;
+// The Camera app's picture area under the nav bar (ui::PREVIEW_* in firmware/lib/ui/src/ui.h).
+export const PREVIEW_Y = 28;
+export const PREVIEW_W = 240;
+export const PREVIEW_H = PANEL_SIZE - PREVIEW_Y;
 
 // Must match ui::Button, ui::Screen and ui::Link in firmware/lib/ui/src/ui.h.
 export const Button = { Up: 0, Down: 1, Left: 2, Right: 3, Center: 4, A: 5, B: 6 } as const;
@@ -33,6 +37,8 @@ interface Exports {
   ui_focus(): number;
   ui_animating(): number;
   ui_flash(): number;
+  ui_preview_buffer(): number;
+  ui_set_preview(on: number): void;
   ui_golden(): number;
   ui_golden_expected(): number;
 }
@@ -51,6 +57,11 @@ export async function createDeviceUi(wasm: BufferSource) {
     screen: () => e.ui_screen(),
     focus: () => e.ui_focus(),
     animating: () => e.ui_animating() !== 0,
+    /** Live camera frame (PREVIEW_W x PREVIEW_H RGB565) for the Camera app; null shows its color bars. */
+    setPreview: (frame: Uint16Array | null) => {
+      if (frame) new Uint16Array(e.memory.buffer, e.ui_preview_buffer(), PREVIEW_W * PREVIEW_H).set(frame);
+      e.ui_set_preview(frame ? 1 : 0);
+    },
     /** Flash on: a light ring around the physical display, outside the panel. */
     flashOn: () => e.ui_flash() !== 0,
     golden: () => e.ui_golden() >>> 0,
@@ -59,6 +70,13 @@ export async function createDeviceUi(wasm: BufferSource) {
 }
 
 export type DeviceUi = Awaited<ReturnType<typeof createDeviceUi>>;
+
+/** RGBA8888 → RGB565 (drops the low bits, like the camera's own RGB565 output). */
+export function rgbaToRgb565(src: Uint8ClampedArray, dst: Uint16Array) {
+  for (let i = 0; i < dst.length; i++) {
+    dst[i] = ((src[4 * i] >> 3) << 11) | ((src[4 * i + 1] >> 2) << 5) | (src[4 * i + 2] >> 3);
+  }
+}
 
 /** RGB565 → RGBA8888 with bit replication, so full white/black map to 255/0. */
 export function rgb565ToRgba(src: Uint16Array, dst: Uint8ClampedArray) {

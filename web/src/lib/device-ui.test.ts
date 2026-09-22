@@ -1,7 +1,19 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { Button, KEY_TO_BUTTON, Link, PANEL_SIZE, Screen, createDeviceUi, rgb565ToRgba } from "./device-ui";
+import {
+  Button,
+  KEY_TO_BUTTON,
+  Link,
+  PANEL_SIZE,
+  PREVIEW_H,
+  PREVIEW_W,
+  PREVIEW_Y,
+  Screen,
+  createDeviceUi,
+  rgb565ToRgba,
+  rgbaToRgb565,
+} from "./device-ui";
 
 // The committed build (`make wasm`): a stale or broken build fails here, not just in the browser.
 const wasm = readFileSync(path.join(__dirname, "../../public/wasm/device-ui.wasm"));
@@ -23,6 +35,17 @@ describe("rgb565ToRgba", () => {
     const out = new Uint8ClampedArray(4);
     rgb565ToRgba(Uint16Array.of(0xf7be), out); // #F7F7F7
     expect([...out]).toEqual([247, 247, 247, 255]);
+  });
+});
+
+describe("rgbaToRgb565", () => {
+  it("packs RGBA into RGB565 and round-trips exact RGB565 colors", () => {
+    const colors = Uint16Array.of(0xf800, 0x07e0, 0x001f, 0xffff, 0x0000, 0x35fd, 0xce7a);
+    const rgba = new Uint8ClampedArray(colors.length * 4);
+    rgb565ToRgba(colors, rgba);
+    const back = new Uint16Array(colors.length);
+    rgbaToRgb565(rgba, back);
+    expect([...back]).toEqual([...colors]);
   });
 });
 
@@ -93,6 +116,20 @@ describe("createDeviceUi (real WASM build)", () => {
     ui.press(Button.B);
     ui.frame(16);
     expect(ui.screen()).toBe(Screen.Home);
+  });
+
+  it("the Camera app shows live preview frames when set, color bars otherwise", async () => {
+    const ui = await createDeviceUi(wasm);
+    ui.press(Button.Center);
+    ui.frame(300); // Camera
+    const frame = new Uint16Array(PREVIEW_W * PREVIEW_H).fill(0x07e0); // all green
+    ui.setPreview(frame);
+    let panel = ui.frame(16);
+    expect(panel[(PREVIEW_Y + 100) * PANEL_SIZE + 5]).toBe(0x07e0);
+    expect(panel[(PREVIEW_Y + 100) * PANEL_SIZE + 235]).toBe(0x07e0);
+    ui.setPreview(null);
+    panel = ui.frame(16);
+    expect(panel[(PREVIEW_Y + 30) * PANEL_SIZE + 5]).toBe(0xffff); // first color bar is white
   });
 
   it("shows the USB icon only when linked", async () => {

@@ -218,7 +218,8 @@ web/
     │   ├── ResizeHandle.tsx    # ↘ corner handle: pointer drag + keyboard slider
     │   ├── FileList.tsx        # saved photos, refresh, click to open
     │   ├── ImageModal.tsx      # <dialog> viewer, ← → navigation, download, Esc/backdrop close
-    │   ├── DeviceScreen.tsx    # Device tab: WASM device UI → canvas (2×), d-pad + A/B below, flash ring, USB icon
+    │   ├── DeviceScreen.tsx    # Device tab: WASM device UI → canvas (2×), d-pad + A/B below, flash ring, USB icon,
+    │   │                       #   live camera frames into the device's Camera app
     │   └── FirmwareButton.tsx  # header: Update firmware (esptool-js), progress, result
     ├── context/
     │   └── camera-context.tsx  # SOURCE_OPTIONS, source, status, files, mirror/vflip/resolution/fps
