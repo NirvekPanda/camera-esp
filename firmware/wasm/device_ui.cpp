@@ -11,6 +11,7 @@ namespace {
 ui::Ui device;
 ui::Framebuffer fb;
 ui::St7789Emulator panel;
+uint16_t preview[ui::PREVIEW_W * ui::PREVIEW_H];  // the page writes camera frames here
 }  // namespace
 
 extern "C" {
@@ -39,6 +40,11 @@ EMSCRIPTEN_KEEPALIVE const uint16_t* ui_frame(int elapsedMs) {
   ui::st7789::flush(panel, fb);
   return panel.render();
 }
+
+// Live camera frames for the Camera app: the page writes PREVIEW_W x PREVIEW_H RGB565 into this
+// buffer, then turns the preview on; off returns the app to its color bars.
+EMSCRIPTEN_KEEPALIVE uint16_t* ui_preview_buffer() { return preview; }
+EMSCRIPTEN_KEEPALIVE void ui_set_preview(int on) { device.setPreview(on ? preview : nullptr); }
 
 EMSCRIPTEN_KEEPALIVE int ui_screen() { return int(device.screen()); }
 EMSCRIPTEN_KEEPALIVE int ui_focus() { return device.focus(); }

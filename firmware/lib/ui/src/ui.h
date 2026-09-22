@@ -18,6 +18,11 @@ constexpr int SETTING_COUNT = 6;       // Resolution, Mirror, Flip vertical, Gri
 constexpr int RESOLUTION_COUNT = 9;    // matches RESOLUTIONS in web/src/lib/camera/settings.ts
 constexpr int MAX_PHOTOS = 99;
 
+// The camera's picture area, under the nav bar: live preview frames are this size (RGB565).
+constexpr int PREVIEW_Y = 28;
+constexpr int PREVIEW_W = WIDTH;
+constexpr int PREVIEW_H = HEIGHT - PREVIEW_Y;
+
 // focus() values for the bottom bar, which is in the same place on every page:
 // Back bottom-left, the page's primary action (if any) bottom-right.
 constexpr int BACK = -1;
@@ -36,6 +41,9 @@ class Ui {
   void render(Framebuffer& fb) const;
 
   void setTime(int minutesSinceMidnight) { minutes_ = minutesSinceMidnight % (24 * 60); }
+  // Live camera frame for the Camera app (PREVIEW_W x PREVIEW_H RGB565, row-major), or nullptr
+  // for none: the app then shows color bars. The caller keeps the buffer alive and current.
+  void setPreview(const uint16_t* pixels) { preview_ = pixels; }
   void setLink(Link link, int batteryPercent = 0) {
     link_ = link;
     battery_ = batteryPercent;
@@ -84,6 +92,7 @@ class Ui {
   int lastPhoto_ = 0;  // where focus left the grid: reopening Pictures and Up from Back return here
   int settingFocus_ = 0, resolution_ = RESOLUTION_COUNT - 1;  // 1920x1080, the site's default
   bool mirrored_ = false, vflipped_ = false, grid_ = false, clock12_ = false, flash_ = false;
+  const uint16_t* preview_ = nullptr;
 };
 
 // Ease-out cubic on 0..1024 fixed point (no floats: identical results on every target).

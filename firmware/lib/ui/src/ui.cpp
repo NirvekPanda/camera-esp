@@ -348,15 +348,19 @@ void Ui::renderHome(Framebuffer& fb) const {
 }
 
 void Ui::renderCamera(Framebuffer& fb) const {
-  // No sensor in the emulator: color bars stand in for the preview, flipped like the real one.
-  const Rect view = {0, BAR_H + 1, WIDTH, HEIGHT - BAR_H - 1};  // full-screen picture
-  const int bars = sizeof BARS / sizeof BARS[0], split = view.h * 7 / 10;
-  for (int i = 0; i < bars; i++) {
-    int k = mirrored_ ? bars - 1 - i : i;  // bar edges from the view width: no rounding overflow
-    int x0 = view.x + k * view.w / bars, x1 = view.x + (k + 1) * view.w / bars;
-    fb.fillRect({x0, vflipped_ ? view.y + view.h - split : view.y, x1 - x0, split}, BARS[i]);
+  const Rect view = {0, PREVIEW_Y, PREVIEW_W, PREVIEW_H};  // full-screen picture
+  if (preview_) {  // live frame from the camera
+    for (int y = 0; y < view.h; y++)
+      for (int x = 0; x < view.w; x++) fb.pixels[(view.y + y) * WIDTH + x] = preview_[y * view.w + x];
+  } else {  // no camera: color bars, flipped like the real picture would be
+    const int bars = sizeof BARS / sizeof BARS[0], split = view.h * 7 / 10;
+    for (int i = 0; i < bars; i++) {
+      int k = mirrored_ ? bars - 1 - i : i;  // bar edges from the view width: no rounding overflow
+      int x0 = view.x + k * view.w / bars, x1 = view.x + (k + 1) * view.w / bars;
+      fb.fillRect({x0, vflipped_ ? view.y + view.h - split : view.y, x1 - x0, split}, BARS[i]);
+    }
+    fb.fillRect({view.x, vflipped_ ? view.y : view.y + split, view.w, view.h - split}, rgb565(0x11, 0x11, 0x11));
   }
-  fb.fillRect({view.x, vflipped_ ? view.y : view.y + split, view.w, view.h - split}, rgb565(0x11, 0x11, 0x11));
   if (grid_) {  // rule of thirds
     for (int i = 1; i < 3; i++) {
       fb.fillRect({view.x + view.w * i / 3, view.y, 1, view.h}, color::white);

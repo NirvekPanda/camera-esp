@@ -151,3 +151,21 @@ test("shows the USB icon while the camera is connected over WebSerial", async ({
   await expect.poll(() => regionHas(page, iconArea, INK)).toBe(true);
   await expect(page.getByRole("status")).toHaveText("connected"); // the connection survived the tab switch
 });
+
+test("the Camera app shows the connected camera's live stream", async ({ page }) => {
+  await page.addInitScript({ path: path.join(__dirname, "fake-serial-device.js") });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Connect" }).click(); // fake board: red band on the left, green elsewhere
+  await expect(page.getByRole("status")).toHaveText("connected");
+  await openDeviceTab(page);
+  await page.keyboard.press("Enter"); // open Camera
+  const isGreen = ([r, g, b]: number[]) => g > 200 && r < 60 && b < 60;
+  const isRed = ([r, g, b]: number[]) => r > 200 && g < 60 && b < 60;
+  await expect.poll(async () => isGreen(await pixel(page, 180, 120))).toBe(true);
+  expect(isRed(await pixel(page, 8, 120))).toBe(true); // the frame is center-cropped, not squashed
+  await page.getByRole("link", { name: "Camera" }).click();
+  await page.getByRole("button", { name: "Disconnect" }).click();
+  await openDeviceTab(page);
+  await page.keyboard.press("Enter");
+  await expect.poll(() => pixel(page, 5, 60)).toEqual([255, 255, 255]); // no camera: color bars
+});
