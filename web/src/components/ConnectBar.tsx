@@ -42,10 +42,11 @@ export function ConnectBar() {
         >
           {status === "connected" ? "Disconnect" : "Connect"}
         </button>
+        <FirmwareButton onBusyChange={setUpdating} />
+        {/* Always the far right of the row. */}
         <span className="status" data-status={status} role="status">
           {status}
         </span>
-        <FirmwareButton onBusyChange={setUpdating} />
       </div>
       {error && (
         <p className="error" role="alert">

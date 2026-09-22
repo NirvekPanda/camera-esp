@@ -44,7 +44,7 @@ export function FirmwareButton({ onBusyChange }: { onBusyChange(busy: boolean): 
         {progress === null ? "Update firmware" : `Updating ${Math.round(progress * 100)}%`}
       </button>
       {result && (
-        <span className="firmware-result" aria-live="polite">
+        <span className="firmware-result" aria-live="polite" title={result}>
           {result}
         </span>
       )}
