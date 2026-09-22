@@ -4,7 +4,7 @@
 export const PANEL_SIZE = 240;
 
 // Must match ui::Button, ui::Screen and ui::Link in firmware/lib/ui/src/ui.h.
-export const Button = { Up: 0, Down: 1, Left: 2, Right: 3, Center: 4 } as const;
+export const Button = { Up: 0, Down: 1, Left: 2, Right: 3, Center: 4, A: 5, B: 6 } as const;
 export const Screen = { Home: 0, Camera: 1, Pictures: 2, Settings: 3, Viewer: 4 } as const;
 export const Link = { None: 0, Usb: 1, Battery: 2 } as const;
 
@@ -15,6 +15,8 @@ export const KEY_TO_BUTTON: Record<string, number> = {
   ArrowRight: Button.Right,
   Enter: Button.Center,
   " ": Button.Center,
+  a: Button.A,
+  b: Button.B,
 };
 
 interface Exports {
@@ -28,6 +30,7 @@ interface Exports {
   ui_screen(): number;
   ui_focus(): number;
   ui_animating(): number;
+  ui_flash(): number;
   ui_golden(): number;
   ui_golden_expected(): number;
 }
@@ -46,6 +49,8 @@ export async function createDeviceUi(wasm: BufferSource) {
     screen: () => e.ui_screen(),
     focus: () => e.ui_focus(),
     animating: () => e.ui_animating() !== 0,
+    /** Flash on: a light ring around the physical display, outside the panel. */
+    flashOn: () => e.ui_flash() !== 0,
     golden: () => e.ui_golden() >>> 0,
     goldenExpected: () => e.ui_golden_expected() >>> 0,
   };

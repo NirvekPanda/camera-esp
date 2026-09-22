@@ -9,11 +9,12 @@ export function clampViewerWidth(width: number, available = Infinity): number {
 }
 
 /**
- * Width that puts the viewer's bottom-right corner as close as possible to the pointer while
- * keeping the aspect ratio: the pointer projected onto the viewer's diagonal.
+ * Width that puts the bottom-right corner of the viewer (horizontally centered, top edge fixed) as
+ * close as possible to the pointer while keeping the aspect ratio. The corner sits at (w/2, w/aspect)
+ * from the top center, so the pointer is projected onto that line.
  */
 export function dragWidth(startWidth: number, dx: number, dy: number, aspect: number): number {
-  const x = startWidth + dx;
+  const x = startWidth / 2 + dx;
   const y = startWidth / aspect + dy;
-  return (x + y / aspect) / (1 + 1 / aspect ** 2);
+  return (x / 2 + y / aspect) / (1 / 4 + 1 / aspect ** 2);
 }

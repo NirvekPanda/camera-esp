@@ -73,13 +73,13 @@ select:disabled {
   outline-offset: 2px;
 }
 
-/* Left-aligned column so the viewer's resize corner tracks the pointer. */
+/* Centered column: displays sit in the middle of the page (dragWidth accounts for it). */
 main {
   width: min(1280px, 100% - 32px);
   margin: 24px auto;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   gap: 24px;
 }
 
@@ -413,17 +413,53 @@ main {
 
 .device-body {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   align-items: center;
   gap: 24px;
 }
 
+/* D-pad centered under the screen, A/B to its right. */
+.device-controls {
+  display: flex;
+  align-items: center;
+  gap: 40px;
+}
+
+.face-buttons {
+  display: grid;
+  grid-template: repeat(2, 52px) / repeat(2, 52px);
+  gap: 4px;
+}
+
+.face-buttons button {
+  padding: 0;
+  border-radius: 50%;
+  font-weight: 600;
+}
+
+.face-a { grid-area: 1 / 2; } /* A upper right, B lower left, as on Nintendo controllers */
+.face-b { grid-area: 2 / 1; }
+
+/* Device body around the display. Its padding is the flash ring: 20 panel px (40 CSS px at 2x),
+   dark bezel when off, white when the flash is on. Always there, so nothing shifts. */
+.device-frame {
+  --ring: 40px;
+  padding: var(--ring);
+  border-radius: 24px;
+  background: #1d1f22;
+  transition: background 80ms;
+}
+
+.device-frame[data-flash="on"] {
+  background: #fff;
+  box-shadow: 0 0 0 1px var(--border); /* keeps the white ring visible on a light page */
+}
+
 .device-screen {
-  width: min(480px, 100%); /* 2x, pixel-exact */
+  display: block;
+  width: min(480px, 100vw - 32px - 2 * var(--ring)); /* 2x, pixel-exact */
   aspect-ratio: 1;
   image-rendering: pixelated;
-  border: 10px solid #1d1f22; /* bezel */
-  border-radius: 14px;
   background: #000;
 }
 

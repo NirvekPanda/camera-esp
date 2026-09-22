@@ -16,17 +16,18 @@ struct Step {
 // Visits every screen through the one control model (arrows move focus, Center activates) and
 // samples frames mid-animation (row slide, page zoom, shutter flash).
 constexpr int R = int(Button::Right), L = int(Button::Left), D = int(Button::Down), U = int(Button::Up),
-              C = int(Button::Center), NONE = -1;
+              C = int(Button::Center), A = int(Button::A), B = int(Button::B), NONE = -1;
 const Step SCRIPT[] = {
     {NONE, 0}, {R, 100}, {NONE, 200},              // slide to Pictures (mid-slide frame)
     {C, 120}, {NONE, 200},                         // zoom into Pictures (mid-zoom frame)
     {R, 0}, {D, 0}, {C, 0}, {C, 0},                // photo 5 -> viewer -> Back
     {D, 0}, {C, 0},                                // bottom bar Back -> Home
     {R, 200}, {C, 300},                            // Settings
-    {C, 0}, {D, 0}, {C, 0}, {D, 0}, {D, 0}, {D, 0}, {U, 0}, {D, 0},  // change values, reach Back
-    {C, 0}, {L, 50}, {L, 200}, {C, 300},           // Home -> Camera
-    {C, 60}, {NONE, 200},                          // shoot (mid-flash frame)
-    {L, 0}, {C, 0},                                // Back -> Home
+    {C, 0}, {D, 0}, {C, 0}, {D, 0}, {D, 0}, {C, 0}, {D, 0}, {C, 0},  // resolution, mirror, grid, 12h
+    {D, 0}, {D, 0}, {U, 0}, {D, 0},                // scrolled list, reach Back
+    {C, 0}, {L, 50}, {L, 200}, {C, 300},           // Home -> Camera (grid on)
+    {A, 60}, {NONE, 200},                          // shoot (mid-flash frame)
+    {B, 0}, {C, 0},                                // flash on, MENU -> Home
 };
 
 ui::Framebuffer fb;

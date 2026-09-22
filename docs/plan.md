@@ -217,7 +217,7 @@ web/
     │   ├── ResizeHandle.tsx    # ↘ corner handle: pointer drag + keyboard slider
     │   ├── FileList.tsx        # saved photos, refresh, click to open
     │   ├── ImageModal.tsx      # <dialog> viewer, ← → navigation, download, Esc/backdrop close
-    │   └── DeviceScreen.tsx    # Device tab: WASM device UI → canvas (2×), 5-way pad + keys, USB icon
+    │   └── DeviceScreen.tsx    # Device tab: WASM device UI → canvas (2×), d-pad + A/B below, flash ring, USB icon
     ├── context/
     │   └── camera-context.tsx  # SOURCE_OPTIONS, source, status, files, mirror/vflip/resolution/fps
     └── lib/
@@ -372,14 +372,16 @@ The full rules live in `CLAUDE.md`. In short:
 16. [x] Resizable viewer (↘ handle, 360–1280px), vertical flip (`VFLIP`), 1920×1080 default with fallback
 17. [x] Wii-inspired device UI (`docs/wii-theme.md`): research, CLI mockups, portable C++ UI + ST7789
     driver/emulator, `make uitest`/`ui-preview`/`wasm`, site **Device** tab
+18. [x] Device UI: full-screen camera (A shoot, B flash, Center MENU), Grid + 12h/24h clock settings,
+    flash ring around the emulated display; both site pages centered, emulator controls below the display
 
 **Phase 2: device + deploy**
-18. [ ] Wire the ST7789 + 5-way switch and run `ui::Ui` on the device (a `SpiBus` over Arduino `SPI`
+19. [ ] Wire the ST7789 + 5-way switch and run `ui::Ui` on the device (a `SpiBus` over Arduino `SPI`
     + DC pin); Camera page shows the live sensor preview and the shutter takes real photos
-19. [ ] Pictures page shows real SD photos (thumbnails, full view); battery level (`Link::Battery`)
-20. [ ] Deploy to `camera.nirvek.xyz`: run `./start.sh` on the Proxmox host, add the tunnel
+20. [ ] Pictures page shows real SD photos (thumbnails, full view); battery level (`Link::Battery`)
+21. [ ] Deploy to `camera.nirvek.xyz`: run `./start.sh` on the Proxmox host, add the tunnel
     hostname → `http://<host>:8888` (fix the garbled `cloudflare-domain-setup.md` first)
-21. [ ] Date range filter, camera animations (README step 3)
+22. [ ] Date range filter, camera animations (README step 3)
 
 **Phase 3: features**
 - [ ] WiFi transport (`WifiSource`)

@@ -35,6 +35,8 @@ describe("KEY_TO_BUTTON", () => {
       ArrowRight: Button.Right,
       Enter: Button.Center,
       " ": Button.Center,
+      a: Button.A,
+      b: Button.B,
     });
   });
 });
@@ -72,6 +74,23 @@ describe("createDeviceUi (real WASM build)", () => {
     expect(ui.animating()).toBe(false);
     ui.frame(-3); // e.g. rAF's frame time is earlier than when the module loaded
     expect(ui.animating()).toBe(false);
+  });
+
+  it("camera: A shoots, B toggles the flash, Center returns home", async () => {
+    const ui = await createDeviceUi(wasm);
+    ui.press(Button.Center);
+    ui.frame(300);
+    expect(ui.screen()).toBe(Screen.Camera);
+    const nav = (panel: Uint16Array) => panel.slice(0, 27 * PANEL_SIZE);
+    const before = nav(ui.frame(16));
+    ui.press(Button.B);
+    expect(nav(ui.frame(16))).not.toEqual(before); // flash icon in the nav bar
+    expect(ui.flashOn()).toBe(true); // the page draws the light ring around the display
+    ui.press(Button.A);
+    expect(ui.animating()).toBe(true); // shutter flash
+    ui.press(Button.Center);
+    ui.frame(16);
+    expect(ui.screen()).toBe(Screen.Home);
   });
 
   it("shows the USB icon only when linked", async () => {

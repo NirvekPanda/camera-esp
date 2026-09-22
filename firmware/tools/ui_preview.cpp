@@ -91,9 +91,18 @@ int main() {
   show(pictures, "viewer", "Viewer (Back focused: its only control)");
   Ui settings = opened(2, Link::Usb);
   show(settings, "settings", "Settings");
-  Ui camera = opened(0, Link::Battery, 76);
-  show(camera, "camera", "Camera (Shoot focused, battery 76%)");
-  camera.press(Button::Left);
-  show(camera, "camera-back", "Camera (Back focused)");
+  for (int i = 0; i < 3; i++) settings.press(Button::Down);
+  settings.press(Button::Center);  // grid on
+  settings.press(Button::Down);
+  settings.press(Button::Center);  // 12-hour clock
+  show(settings, "settings-scrolled", "Settings (scrolled to Clock, 12-hour, grid on)");
+  settings.press(Button::B);
+  settings.press(Button::Left);
+  settings.press(Button::Left);
+  settings.press(Button::Center);
+  settings.tick(OPEN_MS);
+  settings.setLink(Link::Battery, 76);
+  settings.press(Button::B);  // flash on
+  show(settings, "camera", "Camera (full screen, grid, flash on, 12-hour, battery 76%)");
   return 0;
 }

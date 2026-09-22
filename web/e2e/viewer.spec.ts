@@ -27,15 +27,17 @@ test.beforeEach(async ({ page }) => {
   await page.goto("/");
 });
 
-test("starts 640px wide in the 16:9 shape of the 1920×1080 default", async ({ page }) => {
+test("starts 640px wide in the 16:9 shape of the 1920×1080 default, centered", async ({ page }) => {
   const b = await box(page);
+  const main = (await page.locator("main").boundingBox())!;
+  expect(b.x + b.width / 2).toBeCloseTo(main.x + main.width / 2, 0);
   expect(b.width).toBeCloseTo(640, 0);
   expect(b.height).toBeCloseTo(360, 0);
   await expect(handle(page)).toHaveAttribute("aria-valuenow", "640");
 });
 
-test("dragging the corner resizes the viewer, keeping its aspect ratio", async ({ page }) => {
-  await dragHandle(page, 160, 90);
+test("dragging the corner resizes the centered viewer, keeping its aspect ratio", async ({ page }) => {
+  await dragHandle(page, 80, 90); // centered: 160px wider moves the corner 80px right, 90px down
   const b = await box(page);
   expect(b.width).toBeCloseTo(800, 0);
   expect(b.height).toBeCloseTo(450, 0);

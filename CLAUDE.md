@@ -102,7 +102,8 @@ Before **every** commit to this repo:
   in `docs/wii-theme.md` §0:
   - Every screen has the same nav bar and bottom bar: Back bottom-left, primary action
     bottom-right, same size and place on every page.
-  - Arrows only move focus, and Center only activates. No hidden shortcuts.
+  - Arrows only move focus. Center/A activate and B goes back; in the Camera app, A shoots, B
+    toggles the flash and Center is MENU. No hidden shortcuts.
   - One focus outline style.
   - Labels and state only.
   New screens use the shared bars. `make uitest` enforces the rules.
