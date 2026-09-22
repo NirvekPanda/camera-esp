@@ -10,6 +10,7 @@ export function ConnectBar() {
   const { status, error, connect, disconnect } = useCamera();
   const [choice, setChoice] = useState<SourceId>("usb");
   const onDevice = usePathname().startsWith("/device");
+  const [updating, setUpdating] = useState(false); // firmware update holds the serial port
 
   return (
     <header className="bar">
@@ -37,14 +38,14 @@ export function ConnectBar() {
         </select>
         <button
           onClick={status === "connected" ? disconnect : () => connect(choice)}
-          disabled={status === "connecting"}
+          disabled={status === "connecting" || updating}
         >
           {status === "connected" ? "Disconnect" : "Connect"}
         </button>
         <span className="status" data-status={status} role="status">
           {status}
         </span>
-        <FirmwareButton />
+        <FirmwareButton onBusyChange={setUpdating} />
       </div>
       {error && (
         <p className="error" role="alert">

@@ -286,11 +286,16 @@ firmware/
   `CAPTURE` / `LIST` / `GET_FILE` reply `ERROR "No SD card"`, and streaming still works. A failed
   write deletes the partial file.
 - **Flashing:** **Update firmware** on the site (header, every tab) or `make flash` / `make upload`
-  from the CLI. The site button fetches `/firmware/manifest.json`, checks it (chip ESP32-S3, image
-  starts with the ESP magic `0xE9`) *before* touching the board, releases the camera's serial port,
-  asks for the port and flashes with **esptool-js** (Espressif's browser flasher, Apache-2.0, loaded
-  only on click). It writes the merged image at its offset, then hard-resets into the new
-  firmware. Progress shows in the button ("Updating 42%"), and the outcome next to it. Every build also exports
+  from the CLI. The site button:
+  1. Asks for the port first, because the browser only allows that right after the click.
+  2. Fetches and checks `/firmware/manifest.json` and the image (chip ESP32-S3, ESP magic `0xE9`,
+     size), *before* touching the board or the camera connection.
+  3. Releases the camera's serial port.
+  4. Flashes with **esptool-js** (Espressif's browser flasher, Apache-2.0, loaded only on click):
+     it refuses a board whose detected chip isn't the firmware's, writes the merged image at its
+     offset, then hard-resets into the new firmware.
+
+  Connect and Update firmware are disabled while the other holds the port. Progress shows in the button ("Updating 42%"), and the outcome next to it. Every build also exports
   `web/public/firmware/camera-esp.bin`. That's a merged image (bootloader, partitions, boot_app0,
   app) to write at `0x0`, the same parts and offsets `pio run -t upload` uses. `manifest.json` next
   to it records `version`: the last commit touching the image's sources (`firmware/src/`,

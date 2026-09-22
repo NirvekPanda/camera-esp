@@ -22,3 +22,12 @@ test("frees the camera's port first, then reports a failed flash and recovers", 
   await expect(page.locator(".firmware-result")).toHaveText(/^Firmware update failed: /, { timeout: 30_000 });
   await expect(page.getByRole("button", { name: "Update firmware" })).toBeEnabled(); // ready to retry
 });
+
+test("Update firmware waits while a connection is being set up", async ({ page }) => {
+  await page.evaluate(() => {
+    (window as unknown as { fakeCamera: { silent: boolean } }).fakeCamera.silent = true; // connect hangs until timeout
+  });
+  await page.getByRole("button", { name: "Connect" }).click();
+  await expect(page.getByRole("status")).toHaveText("connecting");
+  await expect(page.getByRole("button", { name: "Update firmware" })).toBeDisabled();
+});

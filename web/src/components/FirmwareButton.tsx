@@ -11,14 +11,15 @@ async function requestPort() {
 }
 
 /** Flashes the camera with the firmware this site serves (/firmware/, exported by `make build`). */
-export function FirmwareButton() {
-  const { release } = useCamera();
+export function FirmwareButton({ onBusyChange }: { onBusyChange(busy: boolean): void }) {
+  const { status, release } = useCamera();
   const [progress, setProgress] = useState<number | null>(null);
   const [result, setResult] = useState<string | null>(null);
 
   async function update() {
     setResult(null);
     setProgress(0);
+    onBusyChange(true);
     try {
       const version = await updateFirmware({
         release,
@@ -32,12 +33,14 @@ export function FirmwareButton() {
       setResult(`Firmware update failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setProgress(null);
+      onBusyChange(false);
     }
   }
 
   return (
     <>
-      <button onClick={update} disabled={progress !== null}>
+      {/* Not while a connection is being set up: both need the one serial port. */}
+      <button onClick={update} disabled={progress !== null || status === "connecting"}>
         {progress === null ? "Update firmware" : `Updating ${Math.round(progress * 100)}%`}
       </button>
       {result && (

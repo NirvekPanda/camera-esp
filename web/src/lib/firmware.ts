@@ -26,12 +26,23 @@ export function parseManifest(json: unknown): FirmwareManifest {
   return m as FirmwareManifest;
 }
 
+/** esptool's detected chip must match the firmware: the port picker lists any Espressif board. */
+export function assertChip(detected: string, expected: string) {
+  if (detected !== expected) throw new Error(`Board is ${detected}, firmware is for ${expected}`);
+}
+
 export function checkImage(image: Uint8Array) {
   if (image.length < MIN_IMAGE_BYTES || image[0] !== ESP_IMAGE_MAGIC) throw new Error("Invalid firmware image");
 }
 
-/** Writes image at offset and reboots the board; onProgress gets 0..1. */
-export type Flasher = (port: SerialPort, image: Uint8Array, offset: number, onProgress: (done: number) => void) => Promise<void>;
+/** Checks the board's chip, writes image at offset and reboots the board; onProgress gets 0..1. */
+export type Flasher = (
+  port: SerialPort,
+  image: Uint8Array,
+  offset: number,
+  chip: string,
+  onProgress: (done: number) => void,
+) => Promise<void>;
 
 interface UpdateOptions {
   release(): Promise<void>; // frees the serial port if the camera is connected
@@ -41,15 +52,19 @@ interface UpdateOptions {
   onProgress(done: number): void;
 }
 
-/** Validates the firmware first, then frees the port and flashes. Returns the installed version. */
+/**
+ * Asks for the port first (the browser only allows that right after the click), validates the
+ * firmware before touching the board or the camera connection, then frees the port and flashes.
+ * Returns the installed version.
+ */
 export async function updateFirmware({ release, requestPort, fetchFile, flasher, onProgress }: UpdateOptions) {
+  const port = await requestPort();
   const manifest = parseManifest(JSON.parse(new TextDecoder().decode(await fetchFile("manifest.json"))));
   const image = await fetchFile(manifest.image);
   checkImage(image);
   await release();
-  const port = await requestPort();
   onProgress(0);
-  await flasher(port, image, manifest.offset, onProgress);
+  await flasher(port, image, manifest.offset, manifest.chip, onProgress);
   return manifest.version;
 }
 
@@ -60,12 +75,13 @@ export async function fetchFirmwareFile(name: string) {
 }
 
 /** esptool-js: enters the ROM bootloader, writes the merged image, hard-resets into the new firmware. */
-export const esptoolFlasher: Flasher = async (port, image, offset, onProgress) => {
+export const esptoolFlasher: Flasher = async (port, image, offset, chip, onProgress) => {
   const { ESPLoader, Transport } = await import("esptool-js"); // loaded only when updating
   const transport = new Transport(port);
   try {
     const loader = new ESPLoader({ transport, baudrate: 921600 }); // USB Serial/JTAG ignores the rate
     await loader.main();
+    assertChip(loader.chip.CHIP_NAME, chip);
     await loader.writeFlash({
       fileArray: [{ data: image, address: offset }],
       flashMode: "keep",
@@ -77,6 +93,7 @@ export const esptoolFlasher: Flasher = async (port, image, offset, onProgress) =
     });
     await loader.after("hard_reset");
   } finally {
-    await transport.disconnect();
+    // Best effort: after the reset the board re-enumerates, and closing must never hide the result.
+    await transport.disconnect().catch(() => {});
   }
 };

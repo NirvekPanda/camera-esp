@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { checkImage, parseManifest, updateFirmware, type Flasher } from "./firmware";
+import { assertChip, checkImage, parseManifest, updateFirmware, type Flasher } from "./firmware";
 
 const manifest = { name: "camera-esp", version: "abc1234", chip: "ESP32-S3", board: "x", image: "camera-esp.bin", offset: 0 };
 const image = (size = 200_000) => {
@@ -39,16 +39,23 @@ describe("checkImage", () => {
   });
 });
 
+describe("assertChip", () => {
+  it("refuses to flash a board with a different chip", () => {
+    expect(() => assertChip("ESP32-C3", "ESP32-S3")).toThrow("Board is ESP32-C3, firmware is for ESP32-S3");
+    expect(() => assertChip("ESP32-S3", "ESP32-S3")).not.toThrow();
+  });
+});
+
 describe("updateFirmware", () => {
   const port = {} as SerialPort;
   const fetchFile = vi.fn(async (name: string) =>
     name === "manifest.json" ? new TextEncoder().encode(JSON.stringify(manifest)) : image(),
   );
 
-  it("frees the camera's port, then flashes the image at its offset with progress", async () => {
+  it("asks for the port first (while the click still counts), validates, frees the port, then flashes", async () => {
     const calls: string[] = [];
-    const flasher: Flasher = async (p, bytes, offset, onProgress) => {
-      calls.push(`flash:${offset}:${bytes.length}`);
+    const flasher: Flasher = async (p, bytes, offset, chip, onProgress) => {
+      calls.push(`flash:${offset}:${bytes.length}:${chip}`);
       expect(p).toBe(port);
       onProgress(0.5);
       onProgress(1);
@@ -57,20 +64,21 @@ describe("updateFirmware", () => {
     const version = await updateFirmware({
       release: async () => void calls.push("release"),
       requestPort: async () => (calls.push("port"), port),
-      fetchFile,
+      fetchFile: async (name) => (calls.push(`fetch:${name}`), fetchFile(name)),
       flasher,
       onProgress: (p) => progress.push(p),
     });
-    expect(calls).toEqual(["release", "port", "flash:0:200000"]);
+    expect(calls).toEqual(["port", "fetch:manifest.json", "fetch:camera-esp.bin", "release", "flash:0:200000:ESP32-S3"]);
     expect(progress).toEqual([0, 0.5, 1]);
     expect(version).toBe("abc1234");
   });
 
-  it("checks the firmware before touching the board", async () => {
+  it("checks the firmware before touching the board or the camera connection", async () => {
     const flasher = vi.fn<Flasher>();
+    const release = vi.fn(async () => {});
     await expect(
       updateFirmware({
-        release: async () => {},
+        release,
         requestPort: async () => port,
         fetchFile: async (name) => (name === "manifest.json" ? new TextEncoder().encode(JSON.stringify(manifest)) : new Uint8Array(10)),
         flasher,
@@ -78,5 +86,6 @@ describe("updateFirmware", () => {
       }),
     ).rejects.toThrow("Invalid firmware image");
     expect(flasher).not.toHaveBeenCalled();
+    expect(release).not.toHaveBeenCalled(); // a bad download doesn't drop the camera
   });
 });
