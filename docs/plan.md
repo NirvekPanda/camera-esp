@@ -386,7 +386,7 @@ The full rules live in `CLAUDE.md`. In short:
 16. [x] Resizable viewer (↘ handle, 360–1280px), vertical flip (`VFLIP`), 1920×1080 default with fallback
 17. [x] Wii-inspired device UI (`docs/wii-theme.md`): research, CLI mockups, portable C++ UI + ST7789
     driver/emulator, `make uitest`/`ui-preview`/`wasm`, site **Device** tab
-18. [x] Device UI: full-screen camera (A shoot, B flash, Center MENU), Grid + 12h/24h clock settings,
+18. [x] Device UI: full-screen camera (Center shoot, A flash, B back), Grid + 12h/24h clock settings,
     flash ring around the emulated display; both site pages centered, emulator controls below the display
 
 **Phase 2: device + deploy**

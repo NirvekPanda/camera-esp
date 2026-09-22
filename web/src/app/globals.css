@@ -479,7 +479,6 @@ main {
 .face-buttons button {
   padding: 0;
   color: #8a9099;
-  font-size: 1rem;
   border: 1px solid #c9ccd1;
   background: linear-gradient(#ffffff, #eceef1);
   box-shadow: 0 2px 0 #b9bdc3, inset 0 1px 0 #ffffff;
@@ -487,6 +486,7 @@ main {
 
 .dpad button {
   border-radius: 10px;
+  font-size: 1rem;
 }
 
 .dpad button:active,

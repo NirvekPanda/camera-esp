@@ -114,6 +114,9 @@ test("the display is centered, with the d-pad centered below it and A/B to its r
   expect(pad.y).toBeGreaterThan(screen.y + screen.height);
   expect(Math.abs(mid(pad) - mid(screen))).toBeLessThan(face.width); // the pad + A/B pair is centered
   expect(face.x).toBeGreaterThan(pad.x + pad.width);
+  const fontSize = (name: string) =>
+    page.getByRole("button", { name, exact: true }).evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+  expect(await fontSize("A")).toBeGreaterThan(await fontSize("Up")); // A/B labels are the larger face-button size
 });
 
 test("camera: Center shoots, A lights the ring outside the display, B goes back home", async ({ page }) => {
