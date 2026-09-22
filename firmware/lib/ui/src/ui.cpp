@@ -129,19 +129,22 @@ void photoPlaceholder(Framebuffer& fb, Rect r, int index, int radius) {  // a su
 
 }  // namespace
 
+// Tries "June, 21, 2026", then "Jun, 21, 2026", then "Jun, 21" until one fits.
 void photoDate(char* out, int year, int month, int day, int maxWidth) {
-  for (int shortMonth = 0; shortMonth < 2; shortMonth++) {
+  for (int step = 0; step < 3; step++) {
     char* p = out;
     const char* name = MONTHS[(month - 1) % 12];
-    for (int i = 0; name[i] && (!shortMonth || i < 3); i++) *p++ = name[i];
+    for (int i = 0; name[i] && (step == 0 || i < 3); i++) *p++ = name[i];
     *p++ = ',', *p++ = ' ';
     if (day >= 10) *p++ = char('0' + day / 10);
     *p++ = char('0' + day % 10);
-    *p++ = ',', *p++ = ' ';
-    for (int div = 1000; div; div /= 10) *p++ = char('0' + year / div % 10);
+    if (step < 2) {
+      *p++ = ',', *p++ = ' ';
+      for (int div = 1000; div; div /= 10) *p++ = char('0' + year / div % 10);
+    }
     *p = 0;
     if (Framebuffer::textWidth(fonts::small, out) <= maxWidth) return;
-  }  // the short form is used even if it doesn't fit: never an empty title
+  }  // the shortest form is kept even if it doesn't fit: never an empty title
 }
 
 int easeOut(uint32_t elapsed, uint32_t duration) {

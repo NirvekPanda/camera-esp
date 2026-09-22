@@ -105,7 +105,7 @@ class Ui {
                              {2026, 6, 18, 15 * 60 + 45}, {2026, 6, 14, 18 * 60 + 20}};
 };
 
-// "June, 21, 2026"; the month is shortened ("Jun") if the full text is wider than maxWidth px.
+// "June, 21, 2026" if it fits in maxWidth px, else "Jun, 21, 2026", else "Jun, 21".
 // out must hold 24 chars.
 void photoDate(char* out, int year, int month, int day, int maxWidth);
 

@@ -7,6 +7,7 @@
 #include <sys/time.h>
 
 #include "camera_pins.h"
+#include "jpeg.h"
 #include "protocol.h"
 
 using namespace protocol;
@@ -139,15 +140,17 @@ void setResolution(uint16_t width, uint16_t height) {
   sendError(String("Unknown resolution ") + width + "×" + height);
 }
 
-// Switches the sensor to the photo size and quality, takes one frame at that size, and puts the
-// stream back. The first frames after the switch can still be the old size, so skip those.
+// Switches the sensor to the photo size and quality and takes one frame at that size. Frames
+// queued before the switch are still the old size, but the driver reports the *new* size in
+// fb->width/height, so check the JPEG's own header instead.
 camera_fb_t* takePhoto() {
   sensor->set_quality(sensor, PHOTO_QUALITY);
   sensor->set_framesize(sensor, photo.size);
   camera_fb_t* fb = nullptr;
   for (int attempt = 0; attempt < 8 && !fb; attempt++) {
     fb = esp_camera_fb_get();
-    if (fb && (fb->width != photo.width || fb->height != photo.height)) {
+    uint16_t width = 0, height = 0;
+    if (fb && !(jpegSize(fb->buf, fb->len, width, height) && width == photo.width && height == photo.height)) {
       esp_camera_fb_return(fb);
       fb = nullptr;
     }

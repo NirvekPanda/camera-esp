@@ -8,6 +8,7 @@
 #include "../lib/ui/src/st7789.h"
 #include "../lib/ui/src/st7789_emulator.h"
 #include "../lib/ui/src/ui.h"
+#include "../src/jpeg.h"
 #include "golden.h"
 
 using namespace ui;
@@ -424,14 +425,33 @@ TEST(mirror_and_flip_apply_to_the_live_preview) {
   CHECK_EQ(fb.at(PREVIEW_W - 1, HEIGHT - 1), frame[0]);
 }
 
+TEST(jpeg_size_reads_the_sof_header) {
+  // SOI, an APP0 segment to skip, then a baseline SOF0 for 2048x1536.
+  const uint8_t jpeg[] = {0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x04, 0x00, 0x00, 0xFF, 0xC0, 0x00, 0x11,
+                          0x08, 0x06, 0x00, 0x08, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00};
+  uint16_t w = 0, h = 0;
+  CHECK(jpegSize(jpeg, sizeof jpeg, w, h));
+  CHECK_EQ(w, 2048);
+  CHECK_EQ(h, 1536);
+  const uint8_t progressive[] = {0xFF, 0xD8, 0xFF, 0xC2, 0x00, 0x11, 0x08, 0x00, 0xF0, 0x00, 0xF0, 0, 0, 0};
+  CHECK(jpegSize(progressive, sizeof progressive, w, h));
+  CHECK_EQ(w, 240);
+  CHECK_EQ(h, 240);
+  const uint8_t notJpeg[] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B};
+  CHECK(!jpegSize(notJpeg, sizeof notJpeg, w, h));
+  CHECK(!jpegSize(jpeg, 8, w, h));  // truncated before the SOF
+}
+
 TEST(photo_date_format) {
   char out[32];
   photoDate(out, 2026, 6, 21, 1000);
   CHECK(strcmp(out, "June, 21, 2026") == 0);
   photoDate(out, 2026, 9, 3, 1000);
   CHECK(strcmp(out, "September, 3, 2026") == 0);
-  photoDate(out, 2026, 9, 3, 60);  // not enough room for the full month
+  photoDate(out, 2026, 9, 3, 80);  // not enough room for the full month
   CHECK(strcmp(out, "Sep, 3, 2026") == 0);
+  photoDate(out, 2026, 9, 28, 67);  // 12-hour clock + "100%" battery: drop the year too
+  CHECK(strcmp(out, "Sep, 28") == 0);
 }
 
 TEST(viewer_nav_shows_when_the_photo_was_taken) {
