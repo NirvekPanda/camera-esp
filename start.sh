@@ -5,13 +5,21 @@
 #   ./start.sh           git pull, stop other copies on the port, build, publish, reload nginx
 #   ./start.sh stop      remove the site from nginx and free the port
 #   ./start.sh restart   stop, then start without pulling
+#   ./start.sh --no-pull  deploy the checkout as it is
 set -euo pipefail
 
-SITE_NAME="camera"
+# npm's notices and audit/fund summaries bury the build's own output in a deploy log.
+export NODE_NO_WARNINGS=1
+export NPM_CONFIG_UPDATE_NOTIFIER=false
+export NPM_CONFIG_AUDIT=false
+export NPM_CONFIG_FUND=false
+export NPM_CONFIG_LOGLEVEL=error
+
+SITE_NAME="${SITE_NAME:-camera}"
 SITE_PORT="${SITE_PORT:-8888}"
-PUBLIC_URL="https://camera.nirvek.xyz"
+PUBLIC_URL="${PUBLIC_URL:-https://camera.nirvek.xyz}"
 # sudo password of the host's "espcamera" account, so deploys never stop at a prompt.
-SUDO_PASSWORD="CAM123"
+SUDO_PASSWORD="${SUDO_PASSWORD:-CAM123}"
 
 cd "$(dirname "$0")"
 
@@ -39,6 +47,22 @@ as_root() {
 log() { printf '\033[1m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
+USAGE="usage: ./start.sh [start|stop|restart] [--no-pull]"
+ACTION="start"
+PULL=1
+for arg in "$@"; do
+  case "$arg" in
+    start | stop | restart) ACTION="$arg" ;;
+    --no-pull) PULL=0 ;;
+    -h | --help)
+      echo "$USAGE"
+      exit 0
+      ;;
+    *) die "$USAGE" ;;
+  esac
+done
+if [[ "$ACTION" == "restart" ]]; then PULL=0; fi  # restart deploys the checkout as it is
+
 for cmd in git nginx rsync lsof curl npm; do
   command -v "$cmd" >/dev/null || die "missing '$cmd' (install it first)"
 done
@@ -52,7 +76,9 @@ nginx_running() {
 nginx_apply() {
   $SUDO nginx -t -q || die "nginx config test failed; previous config still live"
   if nginx_running; then
-    if [[ -z "$LINK" ]]; then nginx -s reload; else $SUDO systemctl reload nginx; fi
+    # A reload can fail on a running nginx that lost its master (killed, or started by hand):
+    # restart rather than leave the old content live.
+    if [[ -z "$LINK" ]]; then nginx -s reload; else $SUDO systemctl reload nginx || $SUDO systemctl restart nginx; fi
   elif [[ "${1:-}" == "--start" ]]; then
     if [[ -z "$LINK" ]]; then nginx; else $SUDO systemctl start nginx; fi
   fi
@@ -91,11 +117,18 @@ pull() {
   local before
   before="$(git rev-parse HEAD)"
   log "git pull"
-  git pull --ff-only || die "git pull failed (uncommitted changes, wrong branch or diverged history?)"
+  # Fail loudly: a pull that quietly fails deploys the old checkout while reporting success, which
+  # looks exactly like "the deploy ran but nothing changed" and is the hardest failure to chase.
+  if ! git pull --ff-only; then
+    printf '  local edits:      git status (then git stash, or git checkout -- .)\n' >&2
+    printf '  wrong branch:     git branch --show-current\n' >&2
+    printf '  diverged history: git log --oneline HEAD..@{u}\n' >&2
+    die "git pull failed; nothing was built or published"
+  fi
   # bash reads scripts lazily, so run the new version instead of finishing the old one.
   if ! git diff --quiet "$before" HEAD -- start.sh; then
     log "start.sh changed; re-running the new version"
-    exec ./start.sh start --no-pull
+    exec bash "$0" "$ACTION" --no-pull
   fi
 }
 
@@ -142,7 +175,7 @@ health_check() {
 }
 
 start() {
-  [[ "${1:-}" == "--no-pull" ]] || pull
+  if [[ "$PULL" -eq 1 ]]; then pull; else log "Skipping git pull (--no-pull)"; fi
   build
   free_port
   publish
@@ -165,9 +198,8 @@ stop() {
   die "port $SITE_PORT is still in use by pid $(listeners | xargs)"
 }
 
-case "${1:-start}" in
-  start) start "${2:-}" ;;
+case "$ACTION" in
+  start) start ;;
   stop) stop ;;
-  restart) stop && start --no-pull ;;
-  *) die "usage: ./start.sh [start|stop|restart]" ;;
+  restart) stop && start ;;
 esac
