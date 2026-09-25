@@ -8,12 +8,11 @@
 #   ./start.sh --no-pull  deploy the checkout as it is
 set -euo pipefail
 
-# npm's notices and audit/fund summaries bury the build's own output in a deploy log.
-export NODE_NO_WARNINGS=1
+# npm's own notices bury the build's output in a deploy log. Warnings and the audit stay: a peer
+# range that blocks a dependency has to be recorded (docs/plan.md, Toolchain), and a deploy is
+# exactly when a new advisory is worth seeing.
 export NPM_CONFIG_UPDATE_NOTIFIER=false
-export NPM_CONFIG_AUDIT=false
 export NPM_CONFIG_FUND=false
-export NPM_CONFIG_LOGLEVEL=error
 
 SITE_NAME="${SITE_NAME:-camera}"
 SITE_PORT="${SITE_PORT:-8888}"
@@ -50,9 +49,15 @@ die() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 USAGE="usage: ./start.sh [start|stop|restart] [--no-pull]"
 ACTION="start"
 PULL=1
+SAW_ACTION=0
 for arg in "$@"; do
   case "$arg" in
-    start | stop | restart) ACTION="$arg" ;;
+    # Two actions is a typo, not a choice: "start stop" must never quietly stop a live site.
+    start | stop | restart)
+      [[ "$SAW_ACTION" -eq 0 ]] || die "$USAGE"
+      ACTION="$arg"
+      SAW_ACTION=1
+      ;;
     --no-pull) PULL=0 ;;
     -h | --help)
       echo "$USAGE"
@@ -76,9 +81,14 @@ nginx_running() {
 nginx_apply() {
   $SUDO nginx -t -q || die "nginx config test failed; previous config still live"
   if nginx_running; then
-    # A reload can fail on a running nginx that lost its master (killed, or started by hand):
-    # restart rather than leave the old content live.
-    if [[ -z "$LINK" ]]; then nginx -s reload; else $SUDO systemctl reload nginx || $SUDO systemctl restart nginx; fi
+    if [[ -z "$LINK" ]]; then
+      nginx -s reload
+    elif ! $SUDO systemctl reload nginx; then
+      # A reload can fail on a running nginx whose master systemd lost track of. Restarting only
+      # when publishing: a stop that bounced nginx would drop the host's other sites for nothing.
+      [[ "${1:-}" == "--start" ]] || die "nginx reload failed; $SITE_NAME is still in the config"
+      $SUDO systemctl restart nginx
+    fi
   elif [[ "${1:-}" == "--start" ]]; then
     if [[ -z "$LINK" ]]; then nginx; else $SUDO systemctl start nginx; fi
   fi
@@ -120,15 +130,19 @@ pull() {
   # Fail loudly: a pull that quietly fails deploys the old checkout while reporting success, which
   # looks exactly like "the deploy ran but nothing changed" and is the hardest failure to chase.
   if ! git pull --ff-only; then
+    # git's own stderr names the cause above; these are the three that need a command to diagnose.
+    printf '\033[31merror:\033[0m %s\n' "git pull failed; nothing was built or published" >&2
     printf '  local edits:      git status (then git stash, or git checkout -- .)\n' >&2
     printf '  wrong branch:     git branch --show-current\n' >&2
     printf '  diverged history: git log --oneline HEAD..@{u}\n' >&2
-    die "git pull failed; nothing was built or published"
+    exit 1
   fi
   # bash reads scripts lazily, so run the new version instead of finishing the old one.
   if ! git diff --quiet "$before" HEAD -- start.sh; then
     log "start.sh changed; re-running the new version"
-    exec bash "$0" "$ACTION" --no-pull
+    # ./start.sh, not "$0": the cd above already moved to the script's directory, so a relative
+    # "$0" like projects/camera-esp/start.sh no longer resolves (exit 127, mid-deploy).
+    exec ./start.sh start --no-pull
   fi
 }
 
@@ -137,12 +151,21 @@ build() {
   (
     cd web
     # Use the pinned Node (web/.nvmrc) when nvm is available; nvm.sh isn't `set -u` safe.
-    if [[ -s "${NVM_DIR:-$HOME/.nvm}/nvm.sh" ]]; then
+    local nvm_dir="${NVM_DIR:-$HOME/.nvm}"
+    if [[ -s "$nvm_dir/nvm.sh" ]]; then
       set +u
       # shellcheck disable=SC1091
-      . "${NVM_DIR:-$HOME/.nvm}/nvm.sh"
+      . "$nvm_dir/nvm.sh"
       nvm use --silent || nvm install
       set -u
+    fi
+    # Without nvm (e.g. deploying as a user who doesn't have it) npm falls back to whatever node is
+    # on PATH and `npm ci` dies on engine-strict with a message about the lockfile. Say which node.
+    local want have
+    want="$(cat .nvmrc)"
+    have="$(node -v)"
+    if [[ "$(printf '%s\n%s\n' "$want" "${have#v}" | sort -V | head -1)" != "$want" ]]; then
+      die "node $have is older than web/.nvmrc ($want); no nvm in $nvm_dir (set NVM_DIR, or put a newer node on PATH)"
     fi
     if [[ ! -d node_modules || package-lock.json -nt node_modules/.package-lock.json ]]; then
       npm ci
@@ -175,7 +198,13 @@ health_check() {
 }
 
 start() {
-  if [[ "$PULL" -eq 1 ]]; then pull; else log "Skipping git pull (--no-pull)"; fi
+  if [[ "$PULL" -eq 1 ]]; then
+    pull
+  elif [[ "$ACTION" == "restart" ]]; then
+    log "Restart: deploying this checkout"
+  else
+    log "Skipping git pull (--no-pull)"
+  fi
   build
   free_port
   publish
