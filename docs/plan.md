@@ -48,8 +48,9 @@
 | `make wasm` | build `web/public/wasm/device-ui.wasm` for the Device tab (needs `emcc`) |
 | `make check` | `uitest`, then web lint, types, unit and integration tests |
 
-`start.sh` works on both the Debian host (`/etc/nginx/sites-available`, `/var/www/camera`, sudo)
-and macOS Homebrew nginx (`servers/camera.conf`, no sudo). It tests the nginx config before every
+`start.sh` works on both the Debian host (`/etc/nginx/sites-available`, `/var/www/camera`, sudo
+with the `espcamera` account's password hardcoded in `start.sh`) and macOS Homebrew nginx
+(`servers/camera.conf`, no sudo). It tests the nginx config before every
 reload, so a bad config never takes down other sites. It re-runs itself if a pull changed
 `start.sh`.
 

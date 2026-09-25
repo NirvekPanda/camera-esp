@@ -10,6 +10,8 @@ set -euo pipefail
 SITE_NAME="camera"
 SITE_PORT="${SITE_PORT:-8888}"
 PUBLIC_URL="https://camera.nirvek.xyz"
+# sudo password of the host's "espcamera" account, so deploys never stop at a prompt.
+SUDO_PASSWORD="CAM123"
 
 cd "$(dirname "$0")"
 
@@ -24,8 +26,15 @@ else
   CONF="/etc/nginx/sites-available/$SITE_NAME"
   LINK="/etc/nginx/sites-enabled/$SITE_NAME"
   WEB_ROOT="/var/www/$SITE_NAME"
-  SUDO="$([[ $EUID -eq 0 ]] || echo sudo)"
+  SUDO="$([[ $EUID -eq 0 ]] || echo as_root)"
 fi
+
+# Unlock sudo from the stored password, then run the command separately so it keeps its own stdin
+# (publish pipes the nginx config into `tee`).
+as_root() {
+  printf '%s\n' "$SUDO_PASSWORD" | sudo -S -p '' -v || die "sudo password rejected for $(whoami)"
+  sudo "$@"
+}
 
 log() { printf '\033[1m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
