@@ -51,8 +51,9 @@
 `start.sh` works on both the Debian host (`/etc/nginx/sites-available`, `/var/www/camera`, sudo
 with the `espcamera` account's password hardcoded in `start.sh`) and macOS Homebrew nginx
 (`servers/camera.conf`, no sudo). It tests the nginx config before every
-reload, so a bad config never takes down other sites, and falls back to a restart when a reload
-fails. It re-runs itself if a pull changed `start.sh`, and a failed pull aborts the deploy
+reload, so a bad config never takes down other sites. On the Debian host a failed reload while
+publishing falls back to `systemctl restart nginx`; a failed reload while stopping is an error, so
+a stop never bounces the other sites. It re-runs itself if a pull changed `start.sh`, and a failed pull aborts the deploy
 (never publishes a stale checkout). `--no-pull` deploys the checkout as it is, and `SITE_NAME`,
 `SITE_PORT`, `PUBLIC_URL` and `SUDO_PASSWORD` can be overridden from the environment.
 
