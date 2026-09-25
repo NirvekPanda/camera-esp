@@ -14,6 +14,10 @@ set -euo pipefail
 export NPM_CONFIG_UPDATE_NOTIFIER=false
 export NPM_CONFIG_FUND=false
 
+# nginx lives in /usr/sbin, which Debian leaves off a non-root user's PATH: without this the
+# deploy stops at "missing 'nginx'" on a host where nginx is installed and running.
+export PATH="$PATH:/usr/sbin:/sbin"
+
 SITE_NAME="${SITE_NAME:-camera}"
 SITE_PORT="${SITE_PORT:-8888}"
 PUBLIC_URL="${PUBLIC_URL:-https://camera.nirvek.xyz}"
@@ -146,12 +150,33 @@ pull() {
   fi
 }
 
+# Under `sudo ./start.sh`, $HOME is root's and nvm sits in the invoking user's home instead.
+find_nvm_dir() {
+  if [[ -n "${NVM_DIR:-}" ]]; then
+    printf '%s\n' "$NVM_DIR"
+  elif [[ ! -s "$HOME/.nvm/nvm.sh" && -n "${SUDO_USER:-}" ]]; then
+    local home
+    home="$(getent passwd "$SUDO_USER" 2>/dev/null | cut -d: -f6 || true)"
+    printf '%s\n' "${home:-$HOME}/.nvm"
+  else
+    printf '%s\n' "$HOME/.nvm"
+  fi
+}
+
 build() {
+  # npm run as root in someone else's checkout leaves root-owned node_modules and .next behind, and
+  # the owner's next deploy then fails on EACCES with nothing to say why.
+  local owner
+  owner="$(stat -c %U . 2>/dev/null || stat -f %Su .)"
+  if [[ $EUID -eq 0 && "$owner" != "root" ]]; then
+    die "this checkout belongs to $owner: run ./start.sh as $owner (sudo steps use its password), not as root"
+  fi
   log "Building site"
   (
     cd web
     # Use the pinned Node (web/.nvmrc) when nvm is available; nvm.sh isn't `set -u` safe.
-    local nvm_dir="${NVM_DIR:-$HOME/.nvm}"
+    local nvm_dir
+    nvm_dir="$(find_nvm_dir)"
     if [[ -s "$nvm_dir/nvm.sh" ]]; then
       set +u
       # shellcheck disable=SC1091
@@ -163,7 +188,7 @@ build() {
     # on PATH and `npm ci` dies on engine-strict with a message about the lockfile. Say which node.
     local want have
     want="$(cat .nvmrc)"
-    have="$(node -v)"
+    have="$(node -v 2>/dev/null)" || die "no node on PATH; no nvm in $nvm_dir (set NVM_DIR, or install node $want)"
     if [[ "$(printf '%s\n%s\n' "$want" "${have#v}" | sort -V | head -1)" != "$want" ]]; then
       die "node $have is older than web/.nvmrc ($want); no nvm in $nvm_dir (set NVM_DIR, or put a newer node on PATH)"
     fi
