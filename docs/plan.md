@@ -79,6 +79,55 @@ a stop never bounces the other sites. It re-runs itself if a pull changed `start
 The site's port picker (`USB_FILTERS` in `serial-source.ts`) and `make hwtest` accept both
 vendors (`0x303A`, `0x2886`).
 
+### Board wiring
+
+The perfboard layout is `xiao_perfboard_layout_v2.drawio` (open with diagrams.net);
+`firmware/src/pins.h` is the same wiring as GPIO numbers. The camera and the microSD slot use the
+Sense board's own pins (`firmware/src/camera_pins.h`, SD CS = GPIO21).
+
+| XIAO pad | GPIO | Goes to |
+|---|---|---|
+| D0 | 1 | B button |
+| D1 | 2 | A button |
+| D2 | 3 | 5-way up |
+| D3 | 4 | 5-way center |
+| D4 | 5 | 5-way down |
+| D5 | 6 | 5-way left |
+| D6 | 43 | 5-way right (UART0 TX, free: the console is USB CDC) |
+| D7 | 44 | display DC (UART0 RX) |
+| D8 | 7 | display SCL — SPI SCK, shared with the SD card |
+| D9 | 8 | SPI MISO, the SD card's (left free for it) |
+| D10 | 9 | display SDA — SPI MOSI, shared with the SD card |
+| D11 | 42 | shutter button (back pad, not in the board variant) |
+
+Every button and the switch's common leg go to GND, so they read LOW when held (`INPUT_PULLUP`).
+The display's RES is strapped to 3V3, its CS to GND and its BLK is unconnected (backlight on by
+default).
+
+The direction labels on the 5-way are a guess in the diagram: check them with a multimeter and
+swap them in `pins.h`.
+
+**CS is tied to GND**, so the panel stays selected on the bus it shares with the SD card and sees
+the card's traffic. `device_ui.cpp` parks DC high between its own writes, so those bytes land in
+display RAM as pixels (a flicker of mess) instead of being read as commands, and the next redraw
+clears it. Moving CS to a free GPIO (D12 = GPIO41) is one wire and removes the flicker.
+
+### The device's own screen (`firmware/src/device_ui.cpp`)
+
+The same `ui::Ui` the site emulates, on the real panel: `ui::st7789` writes through a `SpiBus` that
+wraps Arduino `SPI` plus the DC pin, and the 240x240 framebuffer lives in PSRAM.
+
+- **Buttons** are polled with a 25 ms debounce and act on the press. The 5-way and A/B map
+  straight to `ui::Button`; the shutter (D11) counts as Center, and only in the Camera app.
+- **Redraws** happen after a press, while an animation runs, and once a second for the clock (also
+  repainting whatever the card's SPI traffic left on the panel). A full flush is ~25 ms at 40 MHz.
+- **The Camera app** shows the sensor's own frames: each one is decoded to 240x212 RGB565
+  (`SdPhotoLibrary::decodeJpeg`) while that page is open, and nothing is grabbed on other pages.
+- **Shutter and delete** go back through the firmware that owns the camera and the card
+  (`device_ui::Host`), which is the same `savePhoto` the site's `CAPTURE` uses, then the library is
+  refreshed and `libraryChanged()` keeps focus on the same photo.
+- Off USB the nav bar shows no link icon: there's no battery gauge on the board yet.
+
 ### Conventions
 
 - **Filenames:** `YYYYMMDD-HHMMSS.jpg` (e.g. `20260921-142305.jpg`). FAT32 forbids `:`, and this
@@ -450,9 +499,11 @@ The full rules live in `CLAUDE.md`. In short:
     with Back and Delete (red Confirm, `DELETE_FILE`), ready-made 240×180 previews, 480×480 default
 
 **Phase 2: device + deploy**
-20. [ ] Wire the ST7789 + 5-way switch and run `ui::Ui` on the device (a `SpiBus` over Arduino `SPI`
-    + DC pin); Camera page shows the live sensor preview and the shutter takes real photos
-21. [ ] Pictures page shows real SD photos (thumbnails, full view); battery level (`Link::Battery`)
+20. [x] Wire the ST7789 + 5-way switch and run `ui::Ui` on the device (`firmware/src/device_ui.cpp`,
+    pin map in `firmware/src/pins.h`); Camera page shows the live sensor preview, the shutter takes
+    real photos and the Pictures page reads the card. **Not yet run on the board.**
+21. [ ] Battery level on the device (`Link::Battery`); apply the device's Settings (resolution,
+    mirror, flip) to the sensor, as the site's already do
 22. [ ] Deploy to `camera.nirvek.xyz`: run `./start.sh` on the Proxmox host, add the tunnel
     hostname → `http://<host>:8888` (fix the garbled `cloudflare-domain-setup.md` first)
 23. [ ] Date range filter, camera animations (README step 3)

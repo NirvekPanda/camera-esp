@@ -1,6 +1,6 @@
 {
   "name": "camera-esp",
-  "version": "e01afd1",
+  "version": "e9f874d",
   "chip": "ESP32-S3",
   "board": "seeed_xiao_esp32s3",
   "image": "camera-esp.bin",
