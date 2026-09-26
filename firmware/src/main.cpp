@@ -4,9 +4,11 @@
 #include <SD.h>
 #include <SPI.h>
 #include <esp_camera.h>
+#include <esp_heap_caps.h>
 #include <sys/time.h>
 
 #include "camera_pins.h"
+#include "device_ui.h"
 #include "jpeg.h"
 #include "pins.h"
 #include "protocol.h"
@@ -163,16 +165,21 @@ void resumeStream() {
   sensor->set_quality(sensor, STREAM_QUALITY);
 }
 
-void capture() {
-  if (!sdReady) return sendError("No SD card");
+// Takes a photo and saves it with its preview. Returns its name, or "" with the reason in error.
+String savePhoto(String& error, size_t& size) {
+  if (!sdReady) {
+    error = "No SD card";
+    return "";
+  }
   camera_fb_t* fb = takePhoto();
   if (!fb) {
     resumeStream();
-    return sendError("Camera capture failed");
+    error = "Camera capture failed";
+    return "";
   }
   String name = nextPhotoName();
   File file = SD.open(photoPath(name), FILE_WRITE);
-  size_t size = fb->len;
+  size = fb->len;
   bool written = file && file.write(fb->buf, size) == size;
   file.close();
   // The ready-made preview, from the JPEG still in memory; without one it's made on first view.
@@ -181,9 +188,48 @@ void capture() {
   resumeStream();
   if (!written) {
     SD.remove(photoPath(name));  // don't leave a truncated photo behind
-    return sendError("Couldn't write to the SD card");
+    error = "Couldn't write to the SD card";
+    return "";
   }
+  return name;
+}
+
+void capture() {
+  String error;
+  size_t size = 0;
+  const String name = savePhoto(error, size);
+  if (!name.length()) return sendError(error);
   send(CAPTURED, "{\"name\":\"" + name + "\",\"size\":" + size + "}");
+}
+
+// What the device's own screen asks of the camera and the card (device_ui::Host).
+uint16_t* previewPixels = nullptr;  // WIDTH x PREVIEW_H RGB565, PSRAM
+
+bool uiCapture() {
+  String error;
+  size_t size = 0;
+  return savePhoto(error, size).length() > 0;
+}
+
+bool uiDelete(const char* name) { return library.remove(name); }
+
+// One live frame for the Camera app, decoded to the panel's picture area.
+const uint16_t* uiCameraFrame() {
+  if (!sensor || !previewPixels) return nullptr;
+  camera_fb_t* fb = esp_camera_fb_get();
+  if (!fb) return nullptr;
+  const bool ok = SdPhotoLibrary::decodeJpeg(fb->buf, fb->len, ui::WIDTH, ui::PREVIEW_H, previewPixels);
+  esp_camera_fb_return(fb);
+  return ok ? previewPixels : nullptr;
+}
+
+// Local time of day for the nav bar clock, or -1 until the site syncs the clock.
+int uiMinutes() {
+  if (!timeSynced) return -1;
+  const time_t now = time(nullptr);
+  tm t;
+  gmtime_r(&now, &t);  // the site sends local wall-clock time, formatted as UTC
+  return t.tm_hour * 60 + t.tm_min;
 }
 
 void listPhotos() {
@@ -304,6 +350,10 @@ void setup() {
   initCamera();
   sdReady = SD.begin(SD_CS_GPIO_NUM, SPI, 20000000) &&  // 20 MHz: the 4 MHz default makes a preview read ~0.4 s
             (SD.exists(PHOTO_DIR) || SD.mkdir(PHOTO_DIR));
+  if (sdReady) library.refresh();  // the device's Pictures page opens on what's already on the card
+  previewPixels = static_cast<uint16_t*>(heap_caps_malloc(size_t(ui::WIDTH) * ui::PREVIEW_H * 2, MALLOC_CAP_SPIRAM));
+  const device_ui::Host host = {uiCapture, uiDelete, uiCameraFrame};
+  device_ui::begin(library, host);  // headless if the panel or its framebuffer isn't there
 }
 
 void loop() {
@@ -311,6 +361,7 @@ void loop() {
     if (parser.feed(Serial.read())) handle(parser.type, parser.payload, parser.length);
   }
   parser.dropStale(millis());
+  device_ui::loop(bool(Serial), uiMinutes());
   if (streaming && millis() - lastFrameMs >= frameIntervalMs) {
     lastFrameMs = millis();
     if (camera_fb_t* fb = esp_camera_fb_get()) {

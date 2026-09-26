@@ -25,6 +25,8 @@ class SdPhotoLibrary : public ui::PhotoLibrary {
   static bool decode(const char* name, int w, int h, uint16_t* out);
   // Makes and saves the preview for a photo from its JPEG (right after capture: no re-read).
   static bool savePreview(const char* name, const uint8_t* jpeg, size_t length);
+  // An in-memory JPEG, center-cropped and scaled to w x h RGB565: also the device's live preview.
+  static bool decodeJpeg(const uint8_t* jpeg, size_t length, int w, int h, uint16_t* out);
   // Deletes a photo (a name refresh() would list), its preview and its cached thumbnails.
   bool remove(const char* name);
 

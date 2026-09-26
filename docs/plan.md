@@ -104,10 +104,29 @@ Every button and the switch's common leg go to GND, so they read LOW when held (
 The display's RES is strapped to 3V3, its CS to GND and its BLK is unconnected (backlight on by
 default).
 
-Two things to settle before the display can be driven: the direction labels on the 5-way are a
-guess in the diagram (check with a multimeter, then swap them in `pins.h`), and **CS tied to GND
-leaves the panel permanently selected on a bus it shares with the SD card**, so card traffic
-reaches it as commands. Give CS its own GPIO.
+The direction labels on the 5-way are a guess in the diagram: check them with a multimeter and
+swap them in `pins.h`.
+
+**CS is tied to GND**, so the panel stays selected on the bus it shares with the SD card and sees
+the card's traffic. `device_ui.cpp` parks DC high between its own writes, so those bytes land in
+display RAM as pixels (a flicker of mess) instead of being read as commands, and the next redraw
+clears it. Moving CS to a free GPIO (D12 = GPIO41) is one wire and removes the flicker.
+
+### The device's own screen (`firmware/src/device_ui.cpp`)
+
+The same `ui::Ui` the site emulates, on the real panel: `ui::st7789` writes through a `SpiBus` that
+wraps Arduino `SPI` plus the DC pin, and the 240x240 framebuffer lives in PSRAM.
+
+- **Buttons** are polled with a 25 ms debounce and act on the press. The 5-way and A/B map
+  straight to `ui::Button`; the shutter (D11) counts as Center, and only in the Camera app.
+- **Redraws** happen after a press, while an animation runs, and once a second for the clock (also
+  repainting whatever the card's SPI traffic left on the panel). A full flush is ~25 ms at 40 MHz.
+- **The Camera app** shows the sensor's own frames: each one is decoded to 240x212 RGB565
+  (`SdPhotoLibrary::decodeJpeg`) while that page is open, and nothing is grabbed on other pages.
+- **Shutter and delete** go back through the firmware that owns the camera and the card
+  (`device_ui::Host`), which is the same `savePhoto` the site's `CAPTURE` uses, then the library is
+  refreshed and `libraryChanged()` keeps focus on the same photo.
+- Off USB the nav bar shows no link icon: there's no battery gauge on the board yet.
 
 ### Conventions
 
@@ -480,9 +499,11 @@ The full rules live in `CLAUDE.md`. In short:
     with Back and Delete (red Confirm, `DELETE_FILE`), ready-made 240×180 previews, 480×480 default
 
 **Phase 2: device + deploy**
-20. [ ] Wire the ST7789 + 5-way switch and run `ui::Ui` on the device (a `SpiBus` over Arduino `SPI`
-    + DC pin); Camera page shows the live sensor preview and the shutter takes real photos
-21. [ ] Pictures page shows real SD photos (thumbnails, full view); battery level (`Link::Battery`)
+20. [x] Wire the ST7789 + 5-way switch and run `ui::Ui` on the device (`firmware/src/device_ui.cpp`,
+    pin map in `firmware/src/pins.h`); Camera page shows the live sensor preview, the shutter takes
+    real photos and the Pictures page reads the card. **Not yet run on the board.**
+21. [ ] Battery level on the device (`Link::Battery`); apply the device's Settings (resolution,
+    mirror, flip) to the sensor, as the site's already do
 22. [ ] Deploy to `camera.nirvek.xyz`: run `./start.sh` on the Proxmox host, add the tunnel
     hostname → `http://<host>:8888` (fix the garbled `cloudflare-domain-setup.md` first)
 23. [ ] Date range filter, camera animations (README step 3)
