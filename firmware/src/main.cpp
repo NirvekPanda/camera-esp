@@ -8,6 +8,7 @@
 
 #include "camera_pins.h"
 #include "jpeg.h"
+#include "pins.h"
 #include "protocol.h"
 #include "sd_photo_library.h"
 
