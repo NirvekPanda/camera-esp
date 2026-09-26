@@ -79,6 +79,36 @@ a stop never bounces the other sites. It re-runs itself if a pull changed `start
 The site's port picker (`USB_FILTERS` in `serial-source.ts`) and `make hwtest` accept both
 vendors (`0x303A`, `0x2886`).
 
+### Board wiring
+
+The perfboard layout is `xiao_perfboard_layout_v2.drawio` (open with diagrams.net);
+`firmware/src/pins.h` is the same wiring as GPIO numbers. The camera and the microSD slot use the
+Sense board's own pins (`firmware/src/camera_pins.h`, SD CS = GPIO21).
+
+| XIAO pad | GPIO | Goes to |
+|---|---|---|
+| D0 | 1 | B button |
+| D1 | 2 | A button |
+| D2 | 3 | 5-way up |
+| D3 | 4 | 5-way center |
+| D4 | 5 | 5-way down |
+| D5 | 6 | 5-way left |
+| D6 | 43 | 5-way right (UART0 TX, free: the console is USB CDC) |
+| D7 | 44 | display DC (UART0 RX) |
+| D8 | 7 | display SCL — SPI SCK, shared with the SD card |
+| D9 | 8 | SPI MISO, the SD card's (left free for it) |
+| D10 | 9 | display SDA — SPI MOSI, shared with the SD card |
+| D11 | 42 | shutter button (back pad, not in the board variant) |
+
+Every button and the switch's common leg go to GND, so they read LOW when held (`INPUT_PULLUP`).
+The display's RES is strapped to 3V3, its CS to GND and its BLK is unconnected (backlight on by
+default).
+
+Two things to settle before the display can be driven: the direction labels on the 5-way are a
+guess in the diagram (check with a multimeter, then swap them in `pins.h`), and **CS tied to GND
+leaves the panel permanently selected on a bus it shares with the SD card**, so card traffic
+reaches it as commands. Give CS its own GPIO.
+
 ### Conventions
 
 - **Filenames:** `YYYYMMDD-HHMMSS.jpg` (e.g. `20260921-142305.jpg`). FAT32 forbids `:`, and this
