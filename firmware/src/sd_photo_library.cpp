@@ -29,8 +29,9 @@ bool ours(const String& name) {  // photos this camera saved; also safe to put i
 
 void* psram(size_t bytes) { return heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM); }
 
-// Decodes an in-memory JPEG, center-cropped and scaled to w x h RGB565.
-bool decodeJpeg(const uint8_t* jpeg, size_t length, int w, int h, uint16_t* out) {
+}  // namespace
+
+bool SdPhotoLibrary::decodeJpeg(const uint8_t* jpeg, size_t length, int w, int h, uint16_t* out) {
   uint16_t sw = 0, sh = 0;
   if (!jpegSize(jpeg, length, sw, sh)) return false;
   // The decoder can downscale by 2, 4 or 8 for free: use the most that still covers w x h.
@@ -46,6 +47,8 @@ bool decodeJpeg(const uint8_t* jpeg, size_t length, int w, int h, uint16_t* out)
   free(rgb);
   return ok;
 }
+
+namespace {
 
 bool writePreview(const char* name, const uint16_t* preview) {
   if (!SD.exists(PREVIEW_DIR)) SD.mkdir(PREVIEW_DIR);
@@ -74,7 +77,7 @@ bool SdPhotoLibrary::refresh() {
 
 bool SdPhotoLibrary::savePreview(const char* name, const uint8_t* jpeg, size_t length) {
   uint16_t* preview = static_cast<uint16_t*>(psram(PREVIEW_BYTES));
-  bool ok = preview && decodeJpeg(jpeg, length, PREVIEW_W, PREVIEW_H, preview) && writePreview(name, preview);
+  bool ok = preview && SdPhotoLibrary::decodeJpeg(jpeg, length, PREVIEW_W, PREVIEW_H, preview) && writePreview(name, preview);
   if (!ok) SD.remove(previewPath(name));  // never leave another photo's preview under this name
   free(preview);
   return ok;
@@ -92,7 +95,7 @@ bool SdPhotoLibrary::decode(const char* name, int w, int h, uint16_t* out) {
     uint8_t* jpeg = length ? static_cast<uint8_t*>(psram(length)) : nullptr;
     ok = jpeg && photo.read(jpeg, length) == length;
     photo.close();
-    ok = ok && decodeJpeg(jpeg, length, PREVIEW_W, PREVIEW_H, preview);
+    ok = ok && SdPhotoLibrary::decodeJpeg(jpeg, length, PREVIEW_W, PREVIEW_H, preview);
     if (ok) writePreview(name, preview);
     free(jpeg);
   }
