@@ -99,18 +99,14 @@ Sense board's own pins (`firmware/src/camera_pins.h`, SD CS = GPIO21).
 | D9 | 8 | SPI MISO, the SD card's (left free for it) |
 | D10 | 9 | display SDA — SPI MOSI, shared with the SD card |
 | D11 | 42 | shutter button (back pad, not in the board variant) |
+| D12 | 41 | display CS (back pad), so the panel ignores the card's traffic |
 
 Every button and the switch's common leg go to GND, so they read LOW when held (`INPUT_PULLUP`).
-The display's RES is strapped to 3V3, its CS to GND and its BLK is unconnected (backlight on by
-default).
+The display's RES is strapped to 3V3 and its BLK is unconnected (backlight on by default).
 
-The direction labels on the 5-way are a guess in the diagram: check them with a multimeter and
-swap them in `pins.h`.
-
-**CS is tied to GND**, so the panel stays selected on the bus it shares with the SD card and sees
-the card's traffic. `device_ui.cpp` parks DC high between its own writes, so those bytes land in
-display RAM as pixels (a flicker of mess) instead of being read as commands, and the next redraw
-clears it. Moving CS to a free GPIO (D12 = GPIO41) is one wire and removes the flicker.
+The display and the microSD card share the SPI bus, so each has its own chip select: the panel on
+D12, the card on GPIO21. The direction labels on the 5-way are a guess in the diagram; check them
+with a multimeter and swap the five `SW_*` lines in `pins.h`.
 
 ### The device's own screen (`firmware/src/device_ui.cpp`)
 
@@ -119,8 +115,8 @@ wraps Arduino `SPI` plus the DC pin, and the 240x240 framebuffer lives in PSRAM.
 
 - **Buttons** are polled with a 25 ms debounce and act on the press. The 5-way and A/B map
   straight to `ui::Button`; the shutter (D11) counts as Center, and only in the Camera app.
-- **Redraws** happen after a press, while an animation runs, and once a second for the clock (also
-  repainting whatever the card's SPI traffic left on the panel). A full flush is ~25 ms at 40 MHz.
+- **Redraws** happen after a press, while an animation runs, and once a second for the clock. A
+  full flush is ~25 ms at 40 MHz.
 - **The Camera app** shows the sensor's own frames: each one is decoded to 240x212 RGB565
   (`SdPhotoLibrary::decodeJpeg`) while that page is open, and nothing is grabbed on other pages.
 - **Shutter and delete** go back through the firmware that owns the camera and the card

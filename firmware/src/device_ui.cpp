@@ -14,20 +14,17 @@ namespace {
 
 constexpr uint32_t PANEL_HZ = 40000000;  // ST7789 datasheet allows 62.5 MHz; 40 is the safe step
 constexpr uint32_t DEBOUNCE_MS = 25;
-constexpr uint32_t CLOCK_REDRAW_MS = 1000;  // the nav bar clock, and a repaint after SD traffic
+constexpr uint32_t CLOCK_REDRAW_MS = 1000;  // the nav bar clock ticks a minute at a time
 
-// 4-wire SPI on the bus the microSD card shares (SCK D8, MOSI D10). The panel's CS is tied to GND
-// on the board, so it sees the card's traffic too: parking DC high makes those bytes land in its
-// RAM as pixels (visible mess, redrawn a moment later) instead of being read as commands.
+// 4-wire SPI on the bus the microSD card shares (SCK D8, MOSI D10): CS (D12) keeps the card's
+// traffic out of the panel, and DC picks command bytes (low) from pixels (high).
 class PanelBus : public ui::SpiBus {
  public:
   void begin() {
     pinMode(TFT_DC_GPIO, OUTPUT);
     digitalWrite(TFT_DC_GPIO, HIGH);
-    if (TFT_CS_GPIO >= 0) {
-      pinMode(TFT_CS_GPIO, OUTPUT);
-      digitalWrite(TFT_CS_GPIO, HIGH);
-    }
+    pinMode(TFT_CS_GPIO, OUTPUT);
+    digitalWrite(TFT_CS_GPIO, HIGH);  // deselected until a transaction
   }
 
   void command(uint8_t cmd) override {
@@ -49,9 +46,9 @@ class PanelBus : public ui::SpiBus {
   template <typename Body>
   void transaction(Body body) {
     SPI.beginTransaction(SPISettings(PANEL_HZ, MSBFIRST, SPI_MODE0));
-    if (TFT_CS_GPIO >= 0) digitalWrite(TFT_CS_GPIO, LOW);
+    digitalWrite(TFT_CS_GPIO, LOW);
     body();
-    if (TFT_CS_GPIO >= 0) digitalWrite(TFT_CS_GPIO, HIGH);
+    digitalWrite(TFT_CS_GPIO, HIGH);
     SPI.endTransaction();
   }
 };

@@ -20,13 +20,12 @@ constexpr int BTN_A_GPIO = D1;         // 2
 constexpr int BTN_B_GPIO = D0;         // 1
 constexpr int BTN_SHUTTER_GPIO = 42;   // D11
 
-// ST7789 display. SCL/SDA are the SPI bus the microSD card also uses (SCK GPIO7, MOSI GPIO9).
-// RES is strapped to 3V3 and CS to GND on the board, so the panel is always selected: SD traffic
-// reaches it as commands. Give CS its own GPIO before driving both.
+// ST7789 display. SCL/SDA are the SPI bus the microSD card also uses (SCK GPIO7, MOSI GPIO9), so
+// the panel needs its own CS to stay deaf to the card's traffic. RES is strapped to 3V3.
 constexpr int SPI_MISO_GPIO = D9;   // 8, the microSD card's; the panel is write-only
 constexpr int TFT_SCK_GPIO = D8;    // 7
 constexpr int TFT_MOSI_GPIO = D10;  // 9
 constexpr int TFT_DC_GPIO = D7;     // 44, UART0 RX
-constexpr int TFT_CS_GPIO = -1;     // tied to GND
+constexpr int TFT_CS_GPIO = 41;     // D12, the other back pad the variant doesn't name
 constexpr int TFT_RST_GPIO = -1;    // tied to 3V3
 // BLK (backlight) is left unconnected: the module drives it on by default.
