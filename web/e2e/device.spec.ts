@@ -152,18 +152,18 @@ test("the display is centered, with the d-pad centered below it and A/B to its r
   expect(await fontSize("A")).toBeGreaterThan(await fontSize("Up")); // A/B labels are the larger face-button size
 });
 
-test("camera: Center and A both shoot, B goes back home", async ({ page }) => {
+test("camera: Center shoots, A and B both go back home", async ({ page }) => {
   await openDeviceTab(page);
   await page.getByRole("button", { name: "Center" }).click(); // open Camera
   await expect.poll(() => pixel(page, 5, 60)).toEqual([255, 255, 255]); // camera picture shown (zoom done)
   await page.getByRole("button", { name: "Center" }).click();
   await expect.poll(() => pixel(page, 120, 150)).toEqual([255, 255, 255]); // shutter blink on the panel
-  await page.keyboard.press("a"); // A is the spare shutter, and keys work too
-  await expect.poll(() => pixel(page, 120, 150)).toEqual([255, 255, 255]);
-  await page.keyboard.press("b"); // Back: home
+  await page.keyboard.press("a"); // A goes back, and keys work too
   await page.getByRole("button", { name: "Right" }).click();
   await page.getByRole("button", { name: "Center" }).click();
   await expect.poll(() => onPictures(page)).toBe(true); // Pictures opened from home
+  await page.keyboard.press("b"); // B goes back as well
+  await expect.poll(() => onPictures(page)).toBe(false);
 });
 
 test("shows the USB icon while the camera is connected over WebSerial", async ({ page }) => {

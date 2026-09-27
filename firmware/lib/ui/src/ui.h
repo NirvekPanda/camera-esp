@@ -36,9 +36,9 @@ constexpr int PRIMARY = -2;
 
 // The whole device UI: 5-way input + time in, frames out. Deterministic: the same presses and
 // ticks give the same pixels on the device and in the WASM build.
-// One control model everywhere (docs/wii-theme.md): arrows only move focus, Center/A activate the
-// focused element, B goes back, and pages share the nav bar and bottom bar. The camera is a
-// full-screen app: Center or A takes a picture and B goes back home. The photo viewer
+// One control model everywhere (docs/wii-theme.md): arrows only move focus, Center activates the
+// focused element, A and B both go back, and pages share the nav bar and bottom bar. The camera is
+// a full-screen app: Center takes a picture and A or B goes back home. The photo viewer
 // has the shared bars: Left/Right step through photos, Down reaches Back and Delete.
 class Ui {
  public:

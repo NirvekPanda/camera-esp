@@ -115,7 +115,9 @@ The same `ui::Ui` the site emulates, on the real panel: `ui::st7789` writes thro
 wraps Arduino `SPI` plus the DC pin, and the 240x240 framebuffer lives in PSRAM.
 
 - **Buttons** are polled with a 25 ms debounce and act on the press. The 5-way and A/B map
-  straight to `ui::Button`; the shutter (D11) counts as Center, and only in the Camera app.
+  straight to `ui::Button`; the shutter (D11) counts as Center, and only in the Camera app. On the
+  built board only the 5-way and A work, which is why A is Back and Pictures loops with
+  Left/Right: the UI stays usable on four buttons.
   `BUTTONS` reports the raw pins even when the panel didn't start, so they can be checked alone.
 - **Redraws** happen after a press, while an animation runs, and once a second for the clock,
   capped at 30 fps. A full flush is ~25 ms at 40 MHz, so there's no point chasing more.

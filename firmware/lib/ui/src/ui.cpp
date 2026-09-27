@@ -152,19 +152,17 @@ void Ui::press(Button b) {
   if (openT_ < OPEN_MS) return;  // ignore input while a page is opening
   if (screen_ == Screen::Home) return pressHome(b);
   if (screen_ == Screen::Camera) return pressCamera(b);
-  if (b == Button::Center || b == Button::A) return activate();
-  if (b == Button::B) return back();
+  if (b == Button::Center) return activate();
+  if (b == Button::A || b == Button::B) return back();
   pressPage(b);
 }
 
 void Ui::pressCamera(Button b) {
-  // Shutter: Center, and A as the spare the board needs (its own shutter button is one more thing
-  // to fail). The host saves the photo to the SD card.
-  if (b == Button::Center || b == Button::A) {
+  if (b == Button::Center) {  // shutter: the host saves the photo to the SD card
     captureRequests_++;
     flashT_ = 0;
   }
-  if (b == Button::B) back();  // Back, as on every other screen
+  if (b == Button::A || b == Button::B) back();  // Back, as on every other screen
 }
 
 void Ui::back() {
@@ -186,7 +184,7 @@ void Ui::pressHome(Button b) {
     focusFrom_ = homeFocus_;
     homeFocus_ += b == Button::Right ? 1 : -1;
     focusT_ = 0;
-  } else if (b == Button::Center || b == Button::A) {
+  } else if (b == Button::Center) {
     opening_ = Screen(homeFocus_ + 1);
     openT_ = 0;
   }
@@ -199,19 +197,23 @@ void Ui::pressPage(Button b) {
     case Screen::Pictures: {
       const int photos = photoCount();
       if (photoFocus_ >= photos) photoFocus_ = photos > 0 ? photos - 1 : BACK;  // the card changed
-      if (photoFocus_ == BACK) {
-        if (b == Button::Up && photos > 0) photoFocus_ = lastPhoto_ < photos ? lastPhoto_ : photos - 1;
-      } else if (b == Button::Left && photoFocus_ % COLS > 0) {
-        photoFocus_--;
-      } else if (b == Button::Right && photoFocus_ % COLS < COLS - 1 && photoFocus_ + 1 < photos) {
-        photoFocus_++;
+      // Left and Right run through every photo and then Back, as one loop that wraps: the whole
+      // page is reachable with two buttons, so a board missing Up strands nobody.
+      const int slots = photos + 1;
+      const int at = photoFocus_ == BACK ? photos : photoFocus_;
+      int next = at;
+      if (b == Button::Right) {
+        next = (at + 1) % slots;
+      } else if (b == Button::Left) {
+        next = (at + slots - 1) % slots;
       } else if (b == Button::Down) {
         // Into the next row (its last photo if it's shorter), and only past the last row to Back.
-        bool lastRow = photoFocus_ / COLS == (photos - 1) / COLS;
-        photoFocus_ = lastRow ? BACK : (photoFocus_ + COLS < photos ? photoFocus_ + COLS : photos - 1);
-      } else if (b == Button::Up && photoFocus_ >= COLS) {
-        photoFocus_ -= COLS;
+        const bool lastRow = at >= photos || at / COLS == (photos - 1) / COLS;
+        next = lastRow ? photos : (at + COLS < photos ? at + COLS : photos - 1);
+      } else if (b == Button::Up && photos > 0) {
+        next = at == photos ? (lastPhoto_ < photos ? lastPhoto_ : photos - 1) : (at >= COLS ? at - COLS : at);
       }
+      photoFocus_ = next == photos ? BACK : next;
       if (photoFocus_ != BACK) lastPhoto_ = photoFocus_;
       rememberPhoto();
       return;

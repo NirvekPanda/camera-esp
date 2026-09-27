@@ -27,10 +27,10 @@ about the Wii Menu (sources at the end):
    Home has no Back; its bottom bar holds the page dots. The **Camera is the one full-screen app**:
    just the picture under the nav bar, like a camera's live view.
 2. **One control model.** Arrows *only* move focus, spatially: through the content, then down into
-   the bottom bar and back up. **Center and A activate** the focused element, and **B goes back**
-   (Nintendo's A = OK, B = Back). There are no other bindings. In the Camera app, **Center and A
-   both take the picture and B goes back**, so B means Back on every screen. A is the shutter there
-   because the board's own shutter button is one more thing to fail.
+   the bottom bar and back up. **Center activates** the focused element, and **A and B both go
+   back**. There are no other bindings. In the Camera app, **Center takes the picture and A or B
+   goes back**. A doubles as Back rather than a second activate because on the board only the 5-way
+   and A work: Back has to be on a button that exists.
 3. **One focus style.** A 3 px accent outline on whatever has focus: tiles, rows, thumbnails and
    buttons alike. Unfocused elements get a 1 px `line` outline.
 4. **Sensible first focus.** A page opens with its most likely action focused: the first row on
@@ -95,9 +95,12 @@ The Wii's pointer and big TV don't fit here. What changes:
   of a 4×3 grid. ← → moves focus. The row **slides with easing** to keep the focused tile centered,
   and the focused tile grows and gets the blue outline (the Wii hover). Page dots in the bottom bar
   show the position.
-- **Center** (or A) opens the focused page. On every page, **Back** is the bottom-left button (B
-  also goes back). **Pictures shows the photos on the SD card**, through the `PhotoLibrary` interface (`photos.h`):
+- **Center** opens the focused page. On every page, **Back** is the bottom-left button (A and B
+  also go back). **Pictures shows the photos on the SD card**, through the `PhotoLibrary` interface (`photos.h`):
   - Names come newest first.
+  - **Left and Right run through the whole grid and the Back button as one loop that wraps**, so
+    every photo is reachable without Up. Down still skips a row, and Up returns to the grid, for a
+    device whose switch has them.
   - Thumbnails and the viewer image are decoded to the device's sizes.
   - While a thumbnail loads, it's a plain tile. With no photos, the page shows "No photos".
   - On the ESP32, `SdPhotoLibrary` reads the card. In the emulator, the page fills the library from
@@ -134,8 +137,8 @@ The Wii's pointer and big TV don't fit here. What changes:
   - When the device is wired (plan item 19), decide once: either the firmware passes sensor frames
     unflipped, or it maps these settings to the sensor and the UI stops flipping. Photos must match
     the preview either way. The nav bar shows
-  a small camera icon instead of a text title. Center takes a picture (a white blink), A does the
-  same (the board's own shutter button is one more thing to fail), and B goes back to Home.
+  a small camera icon instead of a text title. Center takes a picture (a white blink), and A or B
+  goes back to Home.
 - **Emulator controls:** the d-pad sits in an NES-style housing (a dark well in a gray panel), and
   the arrow and A/B buttons are Wii-style: glossy white, soft gray rim, gray glyphs.
 - **Emulator keyboard:** arrow keys move, **Space and Enter are Center**, and `a`/`b` (any case)
@@ -186,7 +189,7 @@ the primary action always bottom-right. `┏━┓` marks the focused element.
 └────────────────────────────────────────┘
 ```
 
-**Camera** (full screen: the picture and the nav bar only; Center or A shoots, B back):
+**Camera** (full screen: the picture and the nav bar only; Center shoots, A or B back):
 ```
 ┌────────────────────────────────────────┐
 │ 2:23 PM  📷                    76% ▭▯ │  camera icon, no label
@@ -200,7 +203,7 @@ the primary action always bottom-right. `┏━┓` marks the focused element.
 └────────────────────────────────────────┘
 ```
 
-**Pictures** (rounded thumbnails; Down past the grid reaches Back):
+**Pictures** (rounded thumbnails; Left/Right loop through every photo and Back, Down skips a row):
 ```
 ┌────────────────────────────────────────┐
 │ 14:23  Pictures                    ⭘USB│
@@ -216,7 +219,7 @@ the primary action always bottom-right. `┏━┓` marks the focused element.
 └────────────────────────────────────────┘
 ```
 
-**Viewer** (Left/Right step through photos, Down to the bar, B back to the gallery):
+**Viewer** (Left/Right step through photos, Down to the bar, A or B back to the gallery):
 ```
 ┌────────────────────────────────────────┐
 │ 10:30  - June, 21, 2026            ⭘USB│

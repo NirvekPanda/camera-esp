@@ -28,7 +28,7 @@ const Step SCRIPT[] = {
     {D, 0}, {D, 0}, {U, 0}, {D, 0},                // scrolled list, reach Back
     {C, 0}, {L, 50}, {L, 200}, {C, 300},           // Home -> Camera (grid on)
     {C, 60}, {NONE, 200},                          // shoot (mid-blink frame)
-    {A, 0}, {B, 0},                                // flash on, B -> Home
+    {A, 0}, {B, 0},                                // A -> Home, then B on Home: nothing above it
 };
 
 ui::Framebuffer fb;
