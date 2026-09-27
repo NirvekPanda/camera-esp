@@ -109,7 +109,6 @@ int main() {
   settings.press(Button::Center);
   settings.tick(OPEN_MS);
   settings.setLink(Link::Battery, 76);
-  settings.press(Button::A);  // flash on
-  show(settings, "camera", "Camera (full screen, grid, flash on, 12-hour, battery 76%)");
+  show(settings, "camera", "Camera (full screen, grid, 12-hour, battery 76%)");
   return 0;
 }

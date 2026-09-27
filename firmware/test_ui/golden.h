@@ -8,7 +8,7 @@ namespace golden {
 
 // Combined hash of every frame in the script. Only update it after checking the frames with
 // `make ui-preview`; a change means the pixels changed.
-constexpr uint32_t EXPECTED_HASH = 0xeeb69ae3;
+constexpr uint32_t EXPECTED_HASH = 0x581062d3;
 
 uint32_t run();
 

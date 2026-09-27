@@ -444,19 +444,12 @@ main {
 .face-a { grid-area: 1 / 2; } /* A upper right, B lower left, as on Nintendo controllers */
 .face-b { grid-area: 2 / 1; }
 
-/* Device body around the display. Its padding is the flash ring: 20 panel px (40 CSS px at 2x),
-   dark bezel when off, white when the flash is on. Always there, so nothing shifts. */
+/* Device body around the display: 20 panel px of bezel (40 CSS px at 2x). */
 .device-frame {
   --ring: 40px;
   padding: var(--ring);
   border-radius: 24px;
   background: #1d1f22;
-  transition: background 80ms;
-}
-
-.device-frame[data-flash="on"] {
-  background: #fff;
-  box-shadow: 0 0 0 1px var(--border); /* keeps the white ring visible on a light page */
 }
 
 .device-screen {

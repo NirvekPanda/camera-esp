@@ -28,8 +28,9 @@ about the Wii Menu (sources at the end):
    just the picture under the nav bar, like a camera's live view.
 2. **One control model.** Arrows *only* move focus, spatially: through the content, then down into
    the bottom bar and back up. **Center and A activate** the focused element, and **B goes back**
-   (Nintendo's A = OK, B = Back). There are no other bindings. In the Camera app, **Center is the
-   shutter, A toggles the flash and B goes back**, so B means Back on every screen.
+   (Nintendo's A = OK, B = Back). There are no other bindings. In the Camera app, **Center and A
+   both take the picture and B goes back**, so B means Back on every screen. A is the shutter there
+   because the board's own shutter button is one more thing to fail.
 3. **One focus style.** A 3 px accent outline on whatever has focus: tiles, rows, thumbnails and
    buttons alike. Unfocused elements get a 1 px `line` outline.
 4. **Sensible first focus.** A page opens with its most likely action focused: the first row on
@@ -133,17 +134,14 @@ The Wii's pointer and big TV don't fit here. What changes:
   - When the device is wired (plan item 19), decide once: either the firmware passes sensor frames
     unflipped, or it maps these settings to the sensor and the UI stops flipping. Photos must match
     the preview either way. The nav bar shows
-  a small camera icon instead of a text title. Center takes a picture (a white blink), A toggles
-  the flash, and B goes back to Home.
+  a small camera icon instead of a text title. Center takes a picture (a white blink), A does the
+  same (the board's own shutter button is one more thing to fail), and B goes back to Home.
 - **Emulator controls:** the d-pad sits in an NES-style housing (a dark well in a gray panel), and
   the arrow and A/B buttons are Wii-style: glossy white, soft gray rim, gray glyphs.
 - **Emulator keyboard:** arrow keys move, **Space and Enter are Center**, and `a`/`b` (any case)
   are A and B. They work anywhere on the Device tab without clicking the display first, except
   while typing in a form control. Browser defaults are cancelled, so the page doesn't scroll and a
   focused pad button doesn't also click.
-- **Flash:** a light ring *around* the physical display, outside the 240×240 panel. On the panel,
-  a bolt icon sits in the status area to the left of the USB/battery icon. The emulator draws the
-  ring as a 20-panel-pixel white frame around the display (`ui_flash()`).
 
 ### Palette (RGB888 → RGB565)
 
@@ -188,10 +186,10 @@ the primary action always bottom-right. `┏━┓` marks the focused element.
 └────────────────────────────────────────┘
 ```
 
-**Camera** (full screen: the picture and the nav bar only; Center shoots, A flash, B back):
+**Camera** (full screen: the picture and the nav bar only; Center or A shoots, B back):
 ```
 ┌────────────────────────────────────────┐
-│ 2:23 PM  📷                  ⚡ 76% ▭▯ │  camera icon, no label; flash icon beside the battery
+│ 2:23 PM  📷                    76% ▭▯ │  camera icon, no label
 ├────────────────────────────────────────┤
 │        │             │                 │
 │        │  live       │                 │  rule-of-thirds grid (Settings → Grid)
@@ -200,7 +198,6 @@ the primary action always bottom-right. `┏━┓` marks the focused element.
 │────────┼─────────────┼─────────────────│
 │        │             │                 │
 └────────────────────────────────────────┘
- flash on: a white ring lights up around the display, outside the panel
 ```
 
 **Pictures** (rounded thumbnails; Down past the grid reaches Back):
@@ -296,7 +293,7 @@ frame goes through the ST7789 driver and emulator, so it's exactly what the pane
 | Framebuffer | pixels of rects, rounded corners, clipping, text | `make uitest` (native C++) |
 | Driver ↔ emulator | init sequence; full frame and partial windows round-trip to identical pixels; byte order; `MADCTL` rotation | `make uitest` |
 | UI state | focus movement, bottom bar reachable from every page, Center-only activation, viewer, eased animation end states, status icon (none/USB/battery) | `make uitest` |
-| Design rules | Back button pixel-identical on every page; arrows never change values or leave a page; no hint text; camera has no bottom bar; flash never draws on the picture | `make uitest` |
+| Design rules | Back button pixel-identical on every page; arrows never change values or leave a page; no hint text; camera has no bottom bar | `make uitest` |
 | Golden frames | FNV-1a hash of the panel after a scripted input sequence at fixed times | `make uitest` **and** Playwright against the WASM build. Both must equal the same constants: native == WASM, bit for bit |
 | Site tab | Device tab renders a 240×240 canvas, keyboard maps to the 5-way switch, the USB icon appears when the camera is connected | Playwright |
 

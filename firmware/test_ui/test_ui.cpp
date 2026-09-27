@@ -361,7 +361,7 @@ TEST(center_opens_page_after_zoom) {
   CHECK(ui.screen() == Screen::Camera);
 }
 
-TEST(camera_center_shoots_a_toggles_flash_b_goes_back) {
+TEST(camera_center_and_a_both_shoot_b_goes_back) {
   Ui ui;
   openPage(ui, 0);
   ui.press(Button::Center);  // the shutter: the host saves the photo
@@ -369,11 +369,10 @@ TEST(camera_center_shoots_a_toggles_flash_b_goes_back) {
   CHECK_EQ(ui.takeCaptureRequests(), 0);
   CHECK(ui.animating());  // shutter blink
   ui.tick(FLASH_MS);
-  CHECK(!ui.flashOn());
-  ui.press(Button::A);
-  CHECK(ui.flashOn());
-  ui.press(Button::A);
-  CHECK(!ui.flashOn());
+  ui.press(Button::A);  // the spare shutter, for a board whose shutter button is dead
+  CHECK_EQ(ui.takeCaptureRequests(), 1);
+  CHECK(ui.animating());
+  ui.tick(FLASH_MS);
   CHECK(ui.screen() == Screen::Camera);  // neither leaves the camera
   ui.press(Button::B);                    // Back, as everywhere else
   CHECK(ui.screen() == Screen::Home);
@@ -610,53 +609,16 @@ TEST(twelve_hour_clock) {
   CHECK(!sameRegion(fb, fb2, clock));  // 12:05 AM vs 12:05 PM
 }
 
-TEST(flash_is_only_active_inside_the_camera) {
-  Ui ui;
-  openPage(ui, 0);
-  ui.press(Button::A);
-  CHECK(ui.flashOn());
-  ui.press(Button::B);  // home: the ring around the display must go dark
-  CHECK(!ui.flashOn());
-  ui.press(Button::Center);
-  ui.tick(OPEN_MS);
-  CHECK(ui.flashOn());  // the setting is remembered when the camera reopens
-}
-
-TEST(flash_icon_sits_with_the_status_icons) {
-  Ui ui;
-  openPage(ui, 0);
-  ui.setLink(Link::Usb);
-  ui.render(fb);
-  ui.press(Button::A);
-  ui.render(fb2);
-  const Rect status = {WIDTH / 2, 0, WIDTH / 2, 27}, left = {0, 0, WIDTH / 2, 27};
-  CHECK(regionHas(fb2, status, color::accent));  // top-right, beside the USB icon
-  CHECK(sameRegion(fb, fb2, left));              // clock and title untouched
-}
-
-// The flash is a light ring outside the panel (the emulator draws it around the display):
-// on the panel it only shows the nav bar icon, and the picture is untouched.
-TEST(flash_does_not_draw_on_the_picture) {
-  Ui ui;
-  openPage(ui, 0);
-  ui.render(fb);
-  ui.press(Button::A);
-  ui.render(fb2);
-  CHECK(sameRegion(fb, fb2, {0, 28, WIDTH, HEIGHT - 28}));
-}
-
 TEST(arrows_never_change_settings_or_leave_pages) {
   Ui ui;
   openPage(ui, 0);
-  ui.press(Button::A);  // flash on; arrows mustn't change it either
-  bool flash = ui.flashOn();
   bool mirrored = ui.mirrored();
   int resolution = ui.resolution();
   for (Button b : {Button::Up, Button::Up, Button::Left, Button::Right, Button::Down}) ui.press(b);
   CHECK(ui.screen() == Screen::Camera);  // no hidden "Up = home" shortcut
   CHECK_EQ(ui.mirrored(), mirrored);    // no hidden "Left/Right = flip" shortcut
   CHECK_EQ(ui.resolution(), resolution);
-  CHECK_EQ(ui.flashOn(), flash);
+  CHECK_EQ(ui.takeCaptureRequests(), 0);  // nor a hidden shutter
 }
 
 TEST(pictures_grid_bottom_bar_and_viewer) {

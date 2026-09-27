@@ -91,14 +91,6 @@ int drawUsb(Framebuffer& fb, int x, int cy) {  // USB trident, pointing right
   return x;
 }
 
-int drawFlash(Framebuffer& fb, int right, int cy) {  // lightning bolt
-  int x = right - 11, y = cy - 8;
-  for (int r = 0; r < 7; r++) fb.fillRect({x + 7 - r / 2, y + r, 3, 1}, color::accent);      // upper stroke
-  fb.fillRect({x + 2, y + 7, 8, 2}, color::accent);                                          // kink
-  for (int r = 0; r < 7; r++) fb.fillRect({x + 6 - r / 2, y + 9 + r, 3, 1}, color::accent);  // lower stroke
-  return x;
-}
-
 int drawBattery(Framebuffer& fb, int right, int cy, int percent) {
   char label[5], *p = label;
   if (percent >= 100) *p++ = '1', p = twoDigits(p, 0);
@@ -166,11 +158,12 @@ void Ui::press(Button b) {
 }
 
 void Ui::pressCamera(Button b) {
-  if (b == Button::Center) {  // shutter: the host saves the photo to the SD card
+  // Shutter: Center, and A as the spare the board needs (its own shutter button is one more thing
+  // to fail). The host saves the photo to the SD card.
+  if (b == Button::Center || b == Button::A) {
     captureRequests_++;
     flashT_ = 0;
   }
-  if (b == Button::A) flash_ = !flash_;
   if (b == Button::B) back();  // Back, as on every other screen
 }
 
@@ -380,7 +373,6 @@ void Ui::renderNavBar(Framebuffer& fb, const char* title) const {
   int right = WIDTH - 6;
   if (link_ == Link::Usb) right = drawUsb(fb, WIDTH - 32, BAR_H / 2) - 8;
   if (link_ == Link::Battery) right = drawBattery(fb, WIDTH - 6, BAR_H / 2, battery_) - 8;
-  if (flashOn()) right = drawFlash(fb, right, BAR_H / 2) - 8;
 
   // The viewer shows when the photo was taken (from its YYYYMMDD-HHMMSS name): its time here and
   // its date as the title. Other names are shown as they are, next to the current time.

@@ -102,18 +102,17 @@ describe("createDeviceUi (real WASM build)", () => {
     expect(ui.animating()).toBe(false);
   });
 
-  it("camera: Center shoots, A toggles the flash, B goes back home", async () => {
+  it("camera: Center and A both shoot, B goes back home", async () => {
     const ui = await createDeviceUi(wasm);
     ui.press(Button.Center);
     ui.frame(300);
     expect(ui.screen()).toBe(Screen.Camera);
-    const nav = (panel: Uint16Array) => panel.slice(0, 27 * PANEL_SIZE);
-    const before = nav(ui.frame(16));
-    ui.press(Button.A);
-    expect(nav(ui.frame(16))).not.toEqual(before); // flash icon in the nav bar
-    expect(ui.flashOn()).toBe(true); // the page draws the light ring around the display
     ui.press(Button.Center);
     expect(ui.animating()).toBe(true); // shutter blink
+    ui.frame(200); // past the blink
+    ui.press(Button.A); // the spare shutter
+    expect(ui.animating()).toBe(true);
+    ui.frame(200); // past the blink
     ui.press(Button.B);
     ui.frame(16);
     expect(ui.screen()).toBe(Screen.Home);

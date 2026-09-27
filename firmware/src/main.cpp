@@ -307,6 +307,11 @@ void handle(uint8_t type, const uint8_t* payload, uint32_t length) {
       return sendPhotoPixels(payload, length);
     case DELETE_FILE:
       return deletePhoto(reinterpret_cast<const char*>(payload));
+    case BUTTONS: {  // which of the device's own buttons are held, for `make hwtest BUTTONS=1`
+      const uint16_t mask = device_ui::pressedMask();
+      const uint8_t bytes[2] = {uint8_t(mask), uint8_t(mask >> 8)};
+      return void(send(BUTTON_STATE, bytes, sizeof bytes));
+    }
   }
 
   // The rest need the camera.

@@ -38,7 +38,7 @@
 | `make` / `make help` | list all targets (default goal) |
 | `make flash` / `make upload` `[PORT=/dev/cu.usbmodemXXXX]` | build + flash firmware over USB (port auto-detected) |
 | `make build` | build firmware only; also exports `web/public/firmware/` |
-| `make hwtest [PORT=…]` | test the flashed camera over USB (no browser): frames, every resolution, mirror, SD photos |
+| `make hwtest [PORT=…] [BUTTONS=1]` | test the flashed camera over USB (no browser): frames, every resolution, mirror, SD photos. `BUTTONS=1` asks for one button at a time and prints what the board read |
 | `make monitor` | serial monitor (raw protocol bytes while streaming) |
 | `make web` = `./start.sh` | git pull, stop other copies on 8888, build, publish to nginx, health check |
 | `make stop` = `./start.sh stop` | remove the site from nginx, free port 8888 |
@@ -91,8 +91,8 @@ Sense board's own pins (`firmware/src/camera_pins.h`, SD CS = GPIO21).
 | D1 | 2 | A button |
 | D2 | 3 | 5-way up |
 | D3 | 4 | 5-way center |
-| D4 | 5 | 5-way down |
-| D5 | 6 | 5-way left |
+| D4 | 5 | 5-way left |
+| D5 | 6 | 5-way down |
 | D6 | 43 | 5-way right (UART0 TX, free: the console is USB CDC) |
 | D7 | 44 | display DC (UART0 RX) |
 | D8 | 7 | display SCL — SPI SCK, shared with the SD card |
@@ -105,8 +105,9 @@ Every button and the switch's common leg go to GND, so they read LOW when held (
 The display's RES is strapped to 3V3 and its BLK is unconnected (backlight on by default).
 
 The display and the microSD card share the SPI bus, so each has its own chip select: the panel on
-D12, the card on GPIO21. The direction labels on the 5-way are a guess in the diagram; check them
-with a multimeter and swap the five `SW_*` lines in `pins.h`.
+D12, the card on GPIO21. The diagram's 5-way direction labels were a guess: `make hwtest BUTTONS=1`
+asks for one button at a time and prints what the board read, which is how left and down turned out
+to be the other way round. Swapping the `SW_*` lines in `pins.h` is the whole fix.
 
 ### The device's own screen (`firmware/src/device_ui.cpp`)
 
@@ -115,8 +116,9 @@ wraps Arduino `SPI` plus the DC pin, and the 240x240 framebuffer lives in PSRAM.
 
 - **Buttons** are polled with a 25 ms debounce and act on the press. The 5-way and A/B map
   straight to `ui::Button`; the shutter (D11) counts as Center, and only in the Camera app.
-- **Redraws** happen after a press, while an animation runs, and once a second for the clock. A
-  full flush is ~25 ms at 40 MHz.
+  `BUTTONS` reports the raw pins even when the panel didn't start, so they can be checked alone.
+- **Redraws** happen after a press, while an animation runs, and once a second for the clock,
+  capped at 30 fps. A full flush is ~25 ms at 40 MHz, so there's no point chasing more.
 - **The Camera app** shows the sensor's own frames: each one is decoded to 240x212 RGB565
   (`SdPhotoLibrary::decodeJpeg`) while that page is open, and nothing is grabbed on other pages.
 - **Shutter and delete** go back through the firmware that owns the camera and the card
@@ -190,6 +192,7 @@ Binary packets, so JPEGs need no base64:
 | ESP → site | `0x03` | `FILE_LIST` | JSON `[{name,size}]` |
 | ESP → site | `0x04` | `FILE_DATA` | JPEG bytes |
 | ESP → site | `0x06` | `PIXELS` | u16 LE width, u16 LE height, then RGB565 LE pixels |
+| ESP → site | `0x07` | `BUTTON_STATE` | u16 LE bitmask, 1 = held: up, down, left, right, center, A, B, shutter |
 | ESP → site | `0x05` | `OK` | none: reply to `SET_TIME`, `STREAM`, `MIRROR`, `VFLIP`, `RESOLUTION`, `FPS`, `DELETE_FILE` |
 | ESP → site | `0x7F` | `ERROR` | UTF-8 message |
 | site → ESP | `0x81` | `SET_TIME` | u32 LE unix seconds |
@@ -203,6 +206,7 @@ Binary packets, so JPEGs need no base64:
 | site → ESP | `0x89` | `VFLIP` | u8 (1 = upside down, relative to the sensor's mounting) |
 | site → ESP | `0x8A` | `PHOTO_PIXELS` | u16 LE width, u16 LE height (≤ 240), UTF-8 file name. The photo from the SD card, decoded on the device, center-cropped and scaled: reply `PIXELS`. This is what the device UI shows, and how the emulator gets it. Read from the photo's preview (below) |
 | site → ESP | `0x8B` | `DELETE_FILE` | UTF-8 filename. Deletes the photo and its preview: reply `OK` |
+| site → ESP | `0x8C` | `BUTTONS` | none. What the device's own buttons read: reply `BUTTON_STATE` |
 
 - **Every command gets exactly one reply, in order:** `OK`, its data packet (`CAPTURED`,
   `FILE_LIST`, `FILE_DATA`), or `ERROR` with a message for the UI. `FRAME`s are unsolicited and can

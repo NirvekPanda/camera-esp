@@ -48,7 +48,6 @@ export function DeviceScreen() {
   }, [capture, deleteFile]);
   const linkRef = useRef<number>(Link.None);
   const [error, setError] = useState<string | null>(null);
-  const [flash, setFlash] = useState(false);
   const linked = status === "connected" && source?.kind === "serial";
 
   useEffect(() => {
@@ -72,7 +71,6 @@ export function DeviceScreen() {
         uiRef.current = ui;
         setUi(ui);
         let last = performance.now();
-        let flashOn = false;
         const draw = (now: number) => {
           const clock = new Date();
           ui.setTime(clock.getHours() * 60 + clock.getMinutes());
@@ -80,7 +78,6 @@ export function DeviceScreen() {
           // rAF's frame time can precede `last` on the first frame: clamp to 0..100 ms.
           rgb565ToRgba(ui.frame(Math.round(Math.min(Math.max(now - last, 0), 100))), image.data);
           ctx.putImageData(image, 0, 0);
-          if (ui.flashOn() !== flashOn) setFlash((flashOn = ui.flashOn())); // re-render only on change
           last = now;
           frame = requestAnimationFrame(draw);
         };
@@ -206,8 +203,7 @@ export function DeviceScreen() {
   return (
     <section className="device" aria-label="Device screen emulator">
       <div className="device-body">
-        {/* The flash is a light ring around the display, outside the 240x240 panel. */}
-        <div className="device-frame" data-flash={flash ? "on" : "off"}>
+        <div className="device-frame">
           <canvas
             ref={canvasRef}
             className="device-screen"

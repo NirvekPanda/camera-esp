@@ -7,12 +7,12 @@
 // The camera and the microSD slot are on the Sense board's own pins (camera_pins.h).
 
 // 5-way switch: its common leg goes to GND, so a direction reads LOW while held (INPUT_PULLUP).
-// The diagram's direction labels are a guess and need checking with a multimeter (its legend says
-// so); swapping them here is the whole fix.
+// The diagram's direction labels were a guess: `make hwtest BUTTONS=1` shows which leg is which,
+// and swapping the GPIOs here is the whole fix. Left and down were the other way round.
 constexpr int SW_UP_GPIO = D2;      // 3
 constexpr int SW_CENTER_GPIO = D3;  // 4
-constexpr int SW_DOWN_GPIO = D4;    // 5
-constexpr int SW_LEFT_GPIO = D5;    // 6
+constexpr int SW_DOWN_GPIO = D5;    // 6
+constexpr int SW_LEFT_GPIO = D4;    // 5
 constexpr int SW_RIGHT_GPIO = D6;   // 43, UART0 TX: free because the console is USB CDC
 
 // A and B, and the shutter on the back pad. Also to GND, also active LOW.

@@ -1,12 +1,16 @@
 """Hardware check for the flashed camera firmware over USB, independent of the browser.
 
-    make hwtest [PORT=/dev/cu.usbmodemXXXX]
+    make hwtest [PORT=/dev/cu.usbmodemXXXX] [BUTTONS=1]
 
 Speaks the protocol in docs/plan.md: syncs the clock, streams at every resolution (checking real
 JPEG sizes and measuring fps and throughput), toggles mirror, then captures, lists and downloads a
 photo if an SD card is present. Exits non-zero on any failure.
+
+BUTTONS=1 runs the button check instead: it asks for one button at a time, waits 5 seconds for it
+and prints what the board actually read, so a mis-labelled switch leg shows up as the wrong name.
 """
 import json
+import os
 import struct
 import sys
 import time
@@ -15,8 +19,10 @@ import serial
 from serial.tools import list_ports
 
 MAGIC = b"\xa5\x5a"
-FRAME, CAPTURED, FILE_LIST, FILE_DATA, OK, PIXELS, ERROR = 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x7F
-SET_TIME, CAPTURE, LIST, GET_FILE, STREAM, MIRROR, RESOLUTION, FPS, VFLIP, PHOTO_PIXELS, DELETE_FILE = range(0x81, 0x8C)
+FRAME, CAPTURED, FILE_LIST, FILE_DATA, OK, PIXELS, BUTTON_STATE, ERROR = 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x7F
+SET_TIME, CAPTURE, LIST, GET_FILE, STREAM, MIRROR, RESOLUTION, FPS, VFLIP, PHOTO_PIXELS, DELETE_FILE, BUTTONS = range(0x81, 0x8D)
+# Bit order of the BUTTONS reply: device_ui.cpp's BUTTON_NAMES.
+BUTTON_NAMES = ("up", "down", "left", "right", "center", "A", "B", "shutter")
 USB_VENDOR_IDS = {0x303A, 0x2886}  # Espressif USB Serial/JTAG, Seeed
 
 # (requested, expected sensor frame): 480x480 and 720x720 arrive as VGA/HD for the site to crop.
@@ -100,6 +106,38 @@ def find_port():
     return ports[0]
 
 
+def buttons(cam):
+    """Ask for each button in turn and report what the board read. Returns the failure count."""
+    def mask():
+        reply = cam.request(BUTTONS, expect=BUTTON_STATE)
+        bits = struct.unpack_from("<H", reply)[0]
+        return {BUTTON_NAMES[i] for i in range(len(BUTTON_NAMES)) if bits & (1 << i)}
+
+    if mask():
+        print("  Something reads as held already; let go of everything first.")
+    print("  Press each button once. Nothing pressed within 5 s counts as not wired.")
+    failures = 0
+    for name in BUTTON_NAMES:
+        print(f"  press {name:<8}", end="", flush=True)
+        deadline = time.monotonic() + 5
+        seen = set()
+        while time.monotonic() < deadline and not seen:
+            seen = mask()
+        while mask():  # wait for the release, so the next prompt starts clean
+            if time.monotonic() > deadline + 5:
+                break
+        if not seen:
+            failures += 1
+            print("nothing (not wired, or the wrong pin)")
+        elif seen == {name}:
+            print("ok")
+        else:
+            failures += 1
+            print(f"read as {', '.join(sorted(seen))} -- swap them in firmware/src/pins.h")
+    print("  All buttons read correctly." if not failures else f"  {failures} button(s) to fix.")
+    return failures
+
+
 def main():
     port = sys.argv[1] if len(sys.argv) > 1 else find_port()
     print(f"Camera on {port}")
@@ -119,6 +157,9 @@ def main():
         except (AssertionError, TimeoutError) as e:
             failures += 1
             print(f"  FAIL  {name}: {e}")
+
+    if os.environ.get("BUTTONS"):
+        sys.exit(1 if buttons(cam) else 0)
 
     local_time = int(time.time()) + time.localtime().tm_gmtoff  # the site also sends local wall-clock time
     check("sync clock", lambda: cam.request(SET_TIME, struct.pack("<I", local_time)) and None)

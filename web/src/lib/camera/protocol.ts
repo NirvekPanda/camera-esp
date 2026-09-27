@@ -27,6 +27,8 @@ export const PacketType = {
   VFLIP: 0x89,
   PHOTO_PIXELS: 0x8a,
   DELETE_FILE: 0x8b,
+  BUTTONS: 0x8c,
+  BUTTON_STATE: 0x07,
 } as const;
 
 export interface Packet {
