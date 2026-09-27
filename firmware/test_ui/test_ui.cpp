@@ -347,8 +347,8 @@ static void openPage(Ui& ui, int page) {
 
 // Moves focus to the Back button (bottom-left on every page) and presses it.
 static void goBack(Ui& ui) {
-  for (int i = 0; i < 12 && ui.focus() != BACK; i++) ui.press(Button::Down);
-  ui.press(Button::Left);  // from the primary action (bottom-right) to Back
+  for (int i = 0; i < 12 && ui.focus() != BACK && ui.focus() != PRIMARY; i++) ui.press(Button::Down);
+  if (ui.focus() == PRIMARY) ui.press(Button::Left);  // from the primary action (bottom-right)
   CHECK_EQ(ui.focus(), BACK);
   ui.press(Button::Center);
 }
@@ -361,7 +361,7 @@ TEST(center_opens_page_after_zoom) {
   CHECK(ui.screen() == Screen::Camera);
 }
 
-TEST(camera_center_shoots_a_toggles_flash_b_goes_back) {
+TEST(camera_center_shoots_a_and_b_go_back) {
   Ui ui;
   openPage(ui, 0);
   ui.press(Button::Center);  // the shutter: the host saves the photo
@@ -369,12 +369,11 @@ TEST(camera_center_shoots_a_toggles_flash_b_goes_back) {
   CHECK_EQ(ui.takeCaptureRequests(), 0);
   CHECK(ui.animating());  // shutter blink
   ui.tick(FLASH_MS);
-  CHECK(!ui.flashOn());
-  ui.press(Button::A);
-  CHECK(ui.flashOn());
-  ui.press(Button::A);
-  CHECK(!ui.flashOn());
-  CHECK(ui.screen() == Screen::Camera);  // neither leaves the camera
+  CHECK(ui.screen() == Screen::Camera);  // the shutter doesn't leave the camera
+  ui.press(Button::A);                   // A is Back here too
+  CHECK(ui.screen() == Screen::Home);
+  ui.press(Button::Center);
+  ui.tick(OPEN_MS);
   ui.press(Button::B);                    // Back, as everywhere else
   CHECK(ui.screen() == Screen::Home);
   CHECK_EQ(ui.focus(), 0);  // back on the Camera tile
@@ -573,20 +572,26 @@ TEST(camera_grid_overlay) {
   CHECK_EQ(fb.at(WIDTH / 3, 60), color::white);  // rule-of-thirds line
 }
 
-TEST(a_is_ok_and_b_is_back_outside_the_camera) {
+// Only Center opens things: A joins B as Back, because on the board A is the button that works.
+TEST(center_is_ok_and_a_and_b_both_go_back) {
   Ui ui;
   ui.setLibrary(&demoPhotos);
   ui.press(Button::Right);
-  ui.press(Button::A);  // opens the focused tile, like Center
+  ui.press(Button::A);  // not an open: A goes back, and Home has nowhere to go
+  ui.tick(OPEN_MS);
+  CHECK(ui.screen() == Screen::Home);
+  ui.press(Button::Center);
   ui.tick(OPEN_MS);
   CHECK(ui.screen() == Screen::Pictures);
-  ui.press(Button::A);  // opens the focused photo
+  ui.press(Button::Center);  // opens the focused photo
   CHECK(ui.screen() == Screen::Viewer);
-  ui.press(Button::B);  // the viewer has no Back button: B is the way back
+  ui.press(Button::A);  // the viewer's way back, like B
   CHECK(ui.screen() == Screen::Pictures);
-  ui.press(Button::B);
+  ui.press(Button::A);
   CHECK(ui.screen() == Screen::Home);
   ui.press(Button::B);  // nothing above Home
+  CHECK(ui.screen() == Screen::Home);
+  ui.press(Button::A);
   CHECK(ui.screen() == Screen::Home);
 }
 
@@ -610,53 +615,16 @@ TEST(twelve_hour_clock) {
   CHECK(!sameRegion(fb, fb2, clock));  // 12:05 AM vs 12:05 PM
 }
 
-TEST(flash_is_only_active_inside_the_camera) {
-  Ui ui;
-  openPage(ui, 0);
-  ui.press(Button::A);
-  CHECK(ui.flashOn());
-  ui.press(Button::B);  // home: the ring around the display must go dark
-  CHECK(!ui.flashOn());
-  ui.press(Button::Center);
-  ui.tick(OPEN_MS);
-  CHECK(ui.flashOn());  // the setting is remembered when the camera reopens
-}
-
-TEST(flash_icon_sits_with_the_status_icons) {
-  Ui ui;
-  openPage(ui, 0);
-  ui.setLink(Link::Usb);
-  ui.render(fb);
-  ui.press(Button::A);
-  ui.render(fb2);
-  const Rect status = {WIDTH / 2, 0, WIDTH / 2, 27}, left = {0, 0, WIDTH / 2, 27};
-  CHECK(regionHas(fb2, status, color::accent));  // top-right, beside the USB icon
-  CHECK(sameRegion(fb, fb2, left));              // clock and title untouched
-}
-
-// The flash is a light ring outside the panel (the emulator draws it around the display):
-// on the panel it only shows the nav bar icon, and the picture is untouched.
-TEST(flash_does_not_draw_on_the_picture) {
-  Ui ui;
-  openPage(ui, 0);
-  ui.render(fb);
-  ui.press(Button::A);
-  ui.render(fb2);
-  CHECK(sameRegion(fb, fb2, {0, 28, WIDTH, HEIGHT - 28}));
-}
-
 TEST(arrows_never_change_settings_or_leave_pages) {
   Ui ui;
   openPage(ui, 0);
-  ui.press(Button::A);  // flash on; arrows mustn't change it either
-  bool flash = ui.flashOn();
   bool mirrored = ui.mirrored();
   int resolution = ui.resolution();
   for (Button b : {Button::Up, Button::Up, Button::Left, Button::Right, Button::Down}) ui.press(b);
   CHECK(ui.screen() == Screen::Camera);  // no hidden "Up = home" shortcut
   CHECK_EQ(ui.mirrored(), mirrored);    // no hidden "Left/Right = flip" shortcut
   CHECK_EQ(ui.resolution(), resolution);
-  CHECK_EQ(ui.flashOn(), flash);
+  CHECK_EQ(ui.takeCaptureRequests(), 0);  // nor a hidden shutter
 }
 
 TEST(pictures_grid_bottom_bar_and_viewer) {
@@ -725,6 +693,24 @@ TEST(pictures_reopens_on_last_viewed_photo) {
   CHECK(ui.screen() == Screen::Home);
   ui.press(Button::Center);
   ui.tick(OPEN_MS);
+  CHECK_EQ(ui.focus(), 4);
+}
+
+// The board's Up leg is dead, so the grid has to be walkable with Left and Right alone.
+TEST(pictures_left_right_loop_through_every_photo_and_back) {
+  Ui ui;  // 5 photos: row 0 = 0 1 2, row 1 = 3 4
+  openPage(ui, 1);
+  for (int i = 1; i < 5; i++) {
+    ui.press(Button::Right);
+    CHECK_EQ(ui.focus(), i);  // across the end of the row, not just within it
+  }
+  ui.press(Button::Right);
+  CHECK_EQ(ui.focus(), BACK);  // then the Back button
+  ui.press(Button::Right);
+  CHECK_EQ(ui.focus(), 0);  // and round again: Up is never needed
+  ui.press(Button::Left);
+  CHECK_EQ(ui.focus(), BACK);
+  ui.press(Button::Left);
   CHECK_EQ(ui.focus(), 4);
 }
 
@@ -862,7 +848,7 @@ TEST(viewer_has_back_and_delete_and_arrows_step_through_photos) {
   Ui ui;
   openPage(ui, 1);
   ui.press(Button::Right);
-  ui.press(Button::A);
+  ui.press(Button::Center);
   CHECK(ui.screen() == Screen::Viewer);
   CHECK_EQ(ui.focus(), 1);  // the photo is focused
   ui.render(fb);

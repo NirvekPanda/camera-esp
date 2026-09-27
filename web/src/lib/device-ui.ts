@@ -40,7 +40,6 @@ interface Exports {
   ui_screen(): number;
   ui_focus(): number;
   ui_animating(): number;
-  ui_flash(): number;
   ui_preview_buffer(): number;
   ui_library_name(index: number): number;
   ui_library_set_count(count: number): void;
@@ -107,7 +106,6 @@ export async function createDeviceUi(wasm: BufferSource) {
     /** Shutter presses since the last call: the page saves that many photos. */
     takeCaptureRequests: () => e.ui_take_capture_requests(),
     /** Flash on: a light ring around the physical display, outside the panel. */
-    flashOn: () => e.ui_flash() !== 0,
     golden: () => e.ui_golden() >>> 0,
     goldenExpected: () => e.ui_golden_expected() >>> 0,
   };

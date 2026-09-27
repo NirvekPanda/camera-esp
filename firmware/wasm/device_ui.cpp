@@ -109,8 +109,6 @@ EMSCRIPTEN_KEEPALIVE const char* ui_take_delete_request() {
 EMSCRIPTEN_KEEPALIVE int ui_screen() { return int(device.screen()); }
 EMSCRIPTEN_KEEPALIVE int ui_focus() { return device.focus(); }
 EMSCRIPTEN_KEEPALIVE int ui_animating() { return device.animating(); }
-// The flash is a light ring around the physical display, outside the panel: the page draws it.
-EMSCRIPTEN_KEEPALIVE int ui_flash() { return device.flashOn(); }
 
 // The scripted session from the native tests: must return golden::EXPECTED_HASH.
 EMSCRIPTEN_KEEPALIVE uint32_t ui_golden() { return golden::run(); }

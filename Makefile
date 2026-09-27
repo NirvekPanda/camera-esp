@@ -22,7 +22,7 @@ flash: ## Build and flash the firmware (PORT auto-detected if omitted)
 
 upload: flash ## Same as flash
 
-hwtest: ## Test the flashed camera over USB: frames, every resolution, mirror, SD photos
+hwtest: ## Test the flashed camera over USB (BUTTONS=1: check each button one at a time)
 	$(PIO_PYTHON) firmware/tools/hwtest.py $(PORT)
 
 uitest: ## Native tests for the device UI (framebuffer, ST7789 driver/emulator, screens)

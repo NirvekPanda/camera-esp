@@ -91,14 +91,6 @@ int drawUsb(Framebuffer& fb, int x, int cy) {  // USB trident, pointing right
   return x;
 }
 
-int drawFlash(Framebuffer& fb, int right, int cy) {  // lightning bolt
-  int x = right - 11, y = cy - 8;
-  for (int r = 0; r < 7; r++) fb.fillRect({x + 7 - r / 2, y + r, 3, 1}, color::accent);      // upper stroke
-  fb.fillRect({x + 2, y + 7, 8, 2}, color::accent);                                          // kink
-  for (int r = 0; r < 7; r++) fb.fillRect({x + 6 - r / 2, y + 9 + r, 3, 1}, color::accent);  // lower stroke
-  return x;
-}
-
 int drawBattery(Framebuffer& fb, int right, int cy, int percent) {
   char label[5], *p = label;
   if (percent >= 100) *p++ = '1', p = twoDigits(p, 0);
@@ -160,8 +152,8 @@ void Ui::press(Button b) {
   if (openT_ < OPEN_MS) return;  // ignore input while a page is opening
   if (screen_ == Screen::Home) return pressHome(b);
   if (screen_ == Screen::Camera) return pressCamera(b);
-  if (b == Button::Center || b == Button::A) return activate();
-  if (b == Button::B) return back();
+  if (b == Button::Center) return activate();
+  if (b == Button::A || b == Button::B) return back();
   pressPage(b);
 }
 
@@ -170,8 +162,7 @@ void Ui::pressCamera(Button b) {
     captureRequests_++;
     flashT_ = 0;
   }
-  if (b == Button::A) flash_ = !flash_;
-  if (b == Button::B) back();  // Back, as on every other screen
+  if (b == Button::A || b == Button::B) back();  // Back, as on every other screen
 }
 
 void Ui::back() {
@@ -193,7 +184,7 @@ void Ui::pressHome(Button b) {
     focusFrom_ = homeFocus_;
     homeFocus_ += b == Button::Right ? 1 : -1;
     focusT_ = 0;
-  } else if (b == Button::Center || b == Button::A) {
+  } else if (b == Button::Center) {
     opening_ = Screen(homeFocus_ + 1);
     openT_ = 0;
   }
@@ -206,19 +197,23 @@ void Ui::pressPage(Button b) {
     case Screen::Pictures: {
       const int photos = photoCount();
       if (photoFocus_ >= photos) photoFocus_ = photos > 0 ? photos - 1 : BACK;  // the card changed
-      if (photoFocus_ == BACK) {
-        if (b == Button::Up && photos > 0) photoFocus_ = lastPhoto_ < photos ? lastPhoto_ : photos - 1;
-      } else if (b == Button::Left && photoFocus_ % COLS > 0) {
-        photoFocus_--;
-      } else if (b == Button::Right && photoFocus_ % COLS < COLS - 1 && photoFocus_ + 1 < photos) {
-        photoFocus_++;
+      // Left and Right run through every photo and then Back, as one loop that wraps: the whole
+      // page is reachable with two buttons, so a board missing Up strands nobody.
+      const int slots = photos + 1;
+      const int at = photoFocus_ == BACK ? photos : photoFocus_;
+      int next = at;
+      if (b == Button::Right) {
+        next = (at + 1) % slots;
+      } else if (b == Button::Left) {
+        next = (at + slots - 1) % slots;
       } else if (b == Button::Down) {
         // Into the next row (its last photo if it's shorter), and only past the last row to Back.
-        bool lastRow = photoFocus_ / COLS == (photos - 1) / COLS;
-        photoFocus_ = lastRow ? BACK : (photoFocus_ + COLS < photos ? photoFocus_ + COLS : photos - 1);
-      } else if (b == Button::Up && photoFocus_ >= COLS) {
-        photoFocus_ -= COLS;
+        const bool lastRow = at >= photos || at / COLS == (photos - 1) / COLS;
+        next = lastRow ? photos : (at + COLS < photos ? at + COLS : photos - 1);
+      } else if (b == Button::Up && photos > 0) {
+        next = at == photos ? (lastPhoto_ < photos ? lastPhoto_ : photos - 1) : (at >= COLS ? at - COLS : at);
       }
+      photoFocus_ = next == photos ? BACK : next;
       if (photoFocus_ != BACK) lastPhoto_ = photoFocus_;
       rememberPhoto();
       return;
@@ -380,7 +375,6 @@ void Ui::renderNavBar(Framebuffer& fb, const char* title) const {
   int right = WIDTH - 6;
   if (link_ == Link::Usb) right = drawUsb(fb, WIDTH - 32, BAR_H / 2) - 8;
   if (link_ == Link::Battery) right = drawBattery(fb, WIDTH - 6, BAR_H / 2, battery_) - 8;
-  if (flashOn()) right = drawFlash(fb, right, BAR_H / 2) - 8;
 
   // The viewer shows when the photo was taken (from its YYYYMMDD-HHMMSS name): its time here and
   // its date as the title. Other names are shown as they are, next to the current time.

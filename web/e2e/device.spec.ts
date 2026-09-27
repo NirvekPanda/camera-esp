@@ -152,22 +152,18 @@ test("the display is centered, with the d-pad centered below it and A/B to its r
   expect(await fontSize("A")).toBeGreaterThan(await fontSize("Up")); // A/B labels are the larger face-button size
 });
 
-test("camera: Center shoots, A lights the ring outside the display, B goes back home", async ({ page }) => {
+test("camera: Center shoots, A and B both go back home", async ({ page }) => {
   await openDeviceTab(page);
-  const frame = page.locator(".device-frame");
   await page.getByRole("button", { name: "Center" }).click(); // open Camera
   await expect.poll(() => pixel(page, 5, 60)).toEqual([255, 255, 255]); // camera picture shown (zoom done)
-  await page.getByRole("button", { name: "A", exact: true }).click();
-  await expect(frame).toHaveAttribute("data-flash", "on");
-  await expect.poll(() => frame.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgb(255, 255, 255)");
   await page.getByRole("button", { name: "Center" }).click();
   await expect.poll(() => pixel(page, 120, 150)).toEqual([255, 255, 255]); // shutter blink on the panel
-  await page.keyboard.press("a"); // keys work too
-  await expect(frame).toHaveAttribute("data-flash", "off");
-  await page.keyboard.press("b"); // Back: home
+  await page.keyboard.press("a"); // A goes back, and keys work too
   await page.getByRole("button", { name: "Right" }).click();
   await page.getByRole("button", { name: "Center" }).click();
   await expect.poll(() => onPictures(page)).toBe(true); // Pictures opened from home
+  await page.keyboard.press("b"); // B goes back as well
+  await expect.poll(() => onPictures(page)).toBe(false);
 });
 
 test("shows the USB icon while the camera is connected over WebSerial", async ({ page }) => {

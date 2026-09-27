@@ -15,6 +15,7 @@ namespace {
 constexpr uint32_t PANEL_HZ = 40000000;  // ST7789 datasheet allows 62.5 MHz; 40 is the safe step
 constexpr uint32_t DEBOUNCE_MS = 25;
 constexpr uint32_t CLOCK_REDRAW_MS = 1000;  // the nav bar clock ticks a minute at a time
+constexpr uint32_t FRAME_MS = 1000 / 30;    // 30 fps: a full flush is ~25 ms, so don't chase more
 
 // 4-wire SPI on the bus the microSD card shares (SCK D8, MOSI D10): CS (D12) keeps the card's
 // traffic out of the panel, and DC picks command bytes (low) from pixels (high).
@@ -68,6 +69,13 @@ const ButtonPin BUTTONS[] = {
 };
 constexpr int BUTTON_COUNT = sizeof BUTTONS / sizeof BUTTONS[0];
 
+}  // namespace
+
+// Bit order of pressedMask(), and what hwtest prints.
+const char* const BUTTON_NAMES[] = {"up", "down", "left", "right", "center", "A", "B", "shutter", nullptr};
+
+namespace {
+
 PanelBus panel;
 ui::Ui device;
 SdPhotoLibrary* photos = nullptr;
@@ -75,7 +83,7 @@ ui::Framebuffer* frame = nullptr;  // 115 KB: PSRAM, next to the camera's buffer
 Host host = {};
 bool held[BUTTON_COUNT] = {};
 uint32_t settledAt[BUTTON_COUNT] = {};
-uint32_t lastTickMs = 0, lastDrawMs = 0;
+uint32_t lastTickMs = 0, lastDrawMs = 0, lastFrameMs = 0;
 bool dirty = true;
 
 void pollButtons(uint32_t now) {
@@ -109,9 +117,9 @@ void runRequests() {
 bool begin(SdPhotoLibrary& library, const Host& callbacks) {
   host = callbacks;
   photos = &library;
-  frame = static_cast<ui::Framebuffer*>(heap_caps_malloc(sizeof(ui::Framebuffer), MALLOC_CAP_SPIRAM));
-  if (!frame) return false;
   for (int i = 0; i < BUTTON_COUNT; i++) pinMode(BUTTONS[i].gpio, INPUT_PULLUP);
+  frame = static_cast<ui::Framebuffer*>(heap_caps_malloc(sizeof(ui::Framebuffer), MALLOC_CAP_SPIRAM));
+  if (!frame) return false;  // the buttons still report, so hwtest can check them
   SPI.begin(TFT_SCK_GPIO, SPI_MISO_GPIO, TFT_MOSI_GPIO);  // the bus the card is already on
   panel.begin();
   ui::st7789::init(panel);
@@ -134,11 +142,20 @@ void loop(bool usbLinked, int minutes) {
   // The Camera app shows the sensor's own frames; every other page leaves the sensor alone.
   device.setPreview(device.screen() == ui::Screen::Camera ? host.cameraFrame() : nullptr);
 
+  if (now - lastFrameMs < FRAME_MS) return;  // 30 fps is as fast as the panel is worth driving
+  lastFrameMs = now;
   if (!dirty && !device.animating() && now - lastDrawMs < CLOCK_REDRAW_MS) return;
   device.render(*frame);
   ui::st7789::flush(panel, *frame);
   lastDrawMs = now;
   dirty = false;
+}
+
+uint16_t pressedMask() {
+  uint16_t mask = 0;
+  for (int i = 0; i < BUTTON_COUNT; i++)
+    if (digitalRead(BUTTONS[i].gpio) == LOW) mask |= uint16_t(1) << i;
+  return mask;
 }
 
 }  // namespace device_ui

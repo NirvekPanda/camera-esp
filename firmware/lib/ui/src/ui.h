@@ -36,9 +36,9 @@ constexpr int PRIMARY = -2;
 
 // The whole device UI: 5-way input + time in, frames out. Deterministic: the same presses and
 // ticks give the same pixels on the device and in the WASM build.
-// One control model everywhere (docs/wii-theme.md): arrows only move focus, Center/A activate the
-// focused element, B goes back, and pages share the nav bar and bottom bar. The camera is a
-// full-screen app: Center takes a picture, A toggles the flash, B goes back home. The photo viewer
+// One control model everywhere (docs/wii-theme.md): arrows only move focus, Center activates the
+// focused element, A and B both go back, and pages share the nav bar and bottom bar. The camera is
+// a full-screen app: Center takes a picture and A or B goes back home. The photo viewer
 // has the shared bars: Left/Right step through photos, Down reaches Back and Delete.
 class Ui {
  public:
@@ -80,8 +80,6 @@ class Ui {
   bool vflipped() const { return vflipped_; }
   bool grid() const { return grid_; }        // rule-of-thirds overlay on the camera
   bool clock12() const { return clock12_; }  // 12-hour clock with AM/PM
-  // The flash only works in the camera; the setting is kept for when it reopens.
-  bool flashOn() const { return screen_ == Screen::Camera && flash_; }
 
  private:
   void renderNavBar(Framebuffer& fb, const char* title) const;
@@ -115,7 +113,7 @@ class Ui {
   int photoFocus_ = 0;  // stays on the viewed photo while the viewer is open
   int lastPhoto_ = 0;  // where focus left the grid: reopening Pictures and Up from Back return here
   int settingFocus_ = 0, resolution_ = 1;  // 480x480, the site's default
-  bool mirrored_ = false, vflipped_ = false, grid_ = false, clock12_ = false, flash_ = false;
+  bool mirrored_ = false, vflipped_ = false, grid_ = false, clock12_ = false;
   const uint16_t* preview_ = nullptr;
   PhotoLibrary* library_ = nullptr;
   int captureRequests_ = 0;

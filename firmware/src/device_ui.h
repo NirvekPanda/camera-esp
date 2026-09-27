@@ -23,4 +23,9 @@ bool begin(SdPhotoLibrary& library, const Host& host);
 // Poll buttons, animate, redraw. minutes is the local time of day, or -1 while the clock is unset.
 void loop(bool usbLinked, int minutes);
 
+// What the buttons read right now, one bit each in BUTTON_NAMES order: 1 = held. For `make hwtest
+// BUTTONS=1`, which is how a mis-labelled switch leg gets found.
+uint16_t pressedMask();
+extern const char* const BUTTON_NAMES[];  // null-terminated
+
 }  // namespace device_ui
